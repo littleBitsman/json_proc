@@ -407,9 +407,6 @@ mod lints {
 
 /// Sets the lint level of all listed lints to none.
 ///
-/// Note that this will emit a warning if a lint level
-/// was previously defined.
-///
 /// Example:
 /// ```no_run
 /// json_proc::allow_json!(duplicate_keys);
@@ -426,9 +423,6 @@ pub fn allow_json(input: TokenStream) -> TokenStream {
 }
 
 /// Sets the lint level of all listed lints to warning.
-///
-/// Note that this will emit a warning if a lint level
-/// was previously defined.
 ///
 /// Example:
 /// ```no_run
@@ -447,9 +441,6 @@ pub fn warn_json(input: TokenStream) -> TokenStream {
 
 /// Sets the lint level of all listed lints to error.
 ///
-/// Note that this will emit a warning if a lint level
-/// was previously defined.
-///
 /// Example:
 /// ```no_run
 /// json_proc::error_json!(duplicate_keys);
@@ -467,10 +458,7 @@ pub fn error_json(input: TokenStream) -> TokenStream {
 
 /// Sets the lint level of all listed lints to error.
 /// This attribute is an alias for [`error_json`].
-///
-/// Note that this will emit a warning if a lint level
-/// was previously defined.
-///
+/// 
 /// Example:
 /// ```no_run
 /// json_proc::deny_json!(duplicate_keys);
