@@ -1,10 +1,40 @@
-mod main2;
+fn ting(value: f32) -> f32 {
+    value
+}
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use json_proc::*;
+    
+    deny_json!();
 
-    use super::main2::*;
+    #[test]
+    fn test() {
+        let value = String::from("ga");
+        let other_value = 1f32/32f32;
+        
+        println!("{}", json!({
+            "hello": (2 + 4) as f32 + other_value + (b'e' as f32) + ting(100.0),
+            "e": String::from("hello"),
+            "test": None::<()>,
+            "not": "trueStr",
+            "embedded_array": [
+                1,2,
+                5
+                ,10,
+                {
+                    "heck": true
+                }
+    
+            ]
+            ,
+            e2: false,
+            es2: format!("hello: {} {hello}", "world!", hello = value)
+        }));
+    
+        // println!("{}", core::any::type_name_of_val(&None::<String>));
+    }
 
     #[test]
     fn test_basic_key_value_pairs() {

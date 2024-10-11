@@ -19,7 +19,6 @@ enum JsonValue {
     Number(Expr),
     Bool(bool),
     Expr(Expr),
-    #[allow(dead_code)]
     Null,
 }
 
@@ -179,7 +178,8 @@ impl quote::ToTokens for JsonValue {
 
                         json_proc::ToJson::to_json_string(&value)
                     }
-                }.to_tokens(tokens);
+                }
+                .to_tokens(tokens);
             }
         }
     }
@@ -270,14 +270,22 @@ pub fn json(input: TokenStream) -> TokenStream {
 }
 
 mod lints {
-    use std::{collections::BTreeMap, sync::Mutex};
+    use std::{collections::BTreeMap, ops::Deref, sync::Mutex};
 
-    use proc_macro::TokenStream;
-    use proc_macro2::TokenStream as TokenStream2;
+    use proc_macro::{Span, TokenStream};
     use syn::{
         parse::{Parse, ParseStream},
         parse_macro_input, Error as SynError, Ident, Result as SynResult, Token,
     };
+
+    pub struct SpanWrapper(Span);
+    impl Deref for SpanWrapper {
+        type Target = Span;
+
+        fn deref(&self) -> &Self::Target {
+            &self.0
+        }
+    }
 
     #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
     pub enum Lint {
@@ -299,7 +307,7 @@ mod lints {
         fn parse(input: ParseStream) -> SynResult<Self> {
             let ident = input.parse::<Ident>()?;
             Self::try_from(ident.to_string().as_str())
-                .map_err(|_| SynError::new(input.span(), "invalid lint"))
+                .map_err(|_| SynError::new(ident.span(), "invalid lint"))
         }
     }
 
@@ -322,8 +330,8 @@ mod lints {
 
     static LINTS: Mutex<BTreeMap<Lint, Level>> = Mutex::new(BTreeMap::new());
 
-    pub fn get_lint_level(lint: Lint) -> Option<Level> {
-        LINTS.lock().unwrap().get(&lint).copied()
+    pub fn get_lint_level<'a>(lint: Lint) -> Option<Level> {
+        LINTS.lock().unwrap().get_mut(&lint).copied()
     }
 
     struct LintList(Vec<Lint>);
@@ -342,41 +350,58 @@ mod lints {
         }
     }
 
-    pub fn allow(input: TokenStream, item: TokenStream) -> TokenStream {
+    pub fn allow(input: TokenStream) -> TokenStream {
         let lints = parse_macro_input!(input as LintList).0;
 
         let mut lock = LINTS.lock().unwrap();
-        for lint in lints {
-            lock.insert(lint, Level::Allow);
+        if lints.is_empty() {
+            Span::call_site()
+                .warning("no lint levels are being defined in this macro call")
+                .help("remove this macro call")
+                .emit();
+        } else {
+            for lint in lints {
+                lock.insert(lint, Level::Allow);
+            }
         }
 
-        item
+        TokenStream::new()
     }
 
-    pub fn warn(input: TokenStream, item: TokenStream) -> TokenStream {
+    pub fn warn(input: TokenStream) -> TokenStream {
         let lints = parse_macro_input!(input as LintList).0;
 
-        let item = TokenStream2::from(item);
-
         let mut lock = LINTS.lock().unwrap();
-        for lint in lints {
-            lock.insert(lint, Level::Warning);
+        if lints.is_empty() {
+            Span::call_site()
+                .warning("no lint levels are being defined in this macro call")
+                .help("remove this macro call")
+                .emit();
+        } else {
+            for lint in lints {
+                lock.insert(lint, Level::Warning);
+            }
         }
 
-        item.into()
+        TokenStream::new()
     }
 
-    pub fn error(input: TokenStream, item: TokenStream) -> TokenStream {
+    pub fn error(input: TokenStream) -> TokenStream {
         let lints = parse_macro_input!(input as LintList).0;
 
-        let item = TokenStream2::from(item);
-
         let mut lock = LINTS.lock().unwrap();
-        for lint in lints {
-            lock.insert(lint, Level::Error);
+        if lints.is_empty() {
+            Span::call_site()
+                .warning("no lint levels are being defined in this macro call")
+                .help("remove this macro call")
+                .emit();
+        } else {
+            for lint in lints {
+                lock.insert(lint, Level::Error);
+            }
         }
 
-        item.into()
+        TokenStream::new()
     }
 }
 
@@ -387,7 +412,7 @@ mod lints {
 ///
 /// Example:
 /// ```no_run
-/// #[json::allow_json(duplicate_keys)]
+/// json_proc::allow_json!(duplicate_keys);
 /// fn test() {
 ///     json!({
 ///         "key": 2,
@@ -395,9 +420,9 @@ mod lints {
 ///     })
 /// }
 /// ```
-#[proc_macro_attribute]
-pub fn allow_json(input: TokenStream, item: TokenStream) -> TokenStream {
-    lints::allow(input, item)
+#[proc_macro]
+pub fn allow_json(input: TokenStream) -> TokenStream {
+    lints::allow(input)
 }
 
 /// Sets the lint level of all listed lints to warning.
@@ -407,7 +432,7 @@ pub fn allow_json(input: TokenStream, item: TokenStream) -> TokenStream {
 ///
 /// Example:
 /// ```no_run
-/// #[json::warn_json(duplicate_keys)]
+/// json_proc::warn_json!(duplicate_keys);
 /// fn test() {
 ///     json!({
 ///         "key": 2,
@@ -415,9 +440,9 @@ pub fn allow_json(input: TokenStream, item: TokenStream) -> TokenStream {
 ///     })
 /// }
 /// ```
-#[proc_macro_attribute]
-pub fn warn_json(input: TokenStream, item: TokenStream) -> TokenStream {
-    lints::warn(input, item)
+#[proc_macro]
+pub fn warn_json(input: TokenStream) -> TokenStream {
+    lints::warn(input)
 }
 
 /// Sets the lint level of all listed lints to error.
@@ -427,7 +452,7 @@ pub fn warn_json(input: TokenStream, item: TokenStream) -> TokenStream {
 ///
 /// Example:
 /// ```no_run
-/// #[json::error_json(duplicate_keys)]
+/// json_proc::error_json!(duplicate_keys);
 /// fn test() {
 ///     json!({
 ///         "key": 2,
@@ -435,9 +460,9 @@ pub fn warn_json(input: TokenStream, item: TokenStream) -> TokenStream {
 ///     })
 /// }
 /// ```
-#[proc_macro_attribute]
-pub fn error_json(input: TokenStream, item: TokenStream) -> TokenStream {
-    lints::error(input, item)
+#[proc_macro]
+pub fn error_json(input: TokenStream) -> TokenStream {
+    lints::error(input)
 }
 
 /// Sets the lint level of all listed lints to error.
@@ -448,7 +473,7 @@ pub fn error_json(input: TokenStream, item: TokenStream) -> TokenStream {
 ///
 /// Example:
 /// ```no_run
-/// #[json::deny_json(duplicate_keys)]
+/// json_proc::deny_json!(duplicate_keys);
 /// fn test() {
 ///     json!({
 ///         "key": 2,
@@ -456,7 +481,7 @@ pub fn error_json(input: TokenStream, item: TokenStream) -> TokenStream {
 ///     })
 /// }
 /// ```
-#[proc_macro_attribute]
-pub fn deny_json(input: TokenStream, item: TokenStream) -> TokenStream {
-    error_json(input, item)
+#[proc_macro]
+pub fn deny_json(input: TokenStream) -> TokenStream {
+    error_json(input)
 }
