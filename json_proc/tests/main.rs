@@ -6,8 +6,6 @@ fn ting(value: f32) -> f32 {
 mod tests {
     use super::*;
     use json_proc::*;
-    
-    deny_json!();
 
     #[test]
     fn test() {
