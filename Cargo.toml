@@ -1,0 +1,7 @@
+[workspace]
+members = [ 
+    "json_proc",
+    "json_proc_macro",
+    "json_proc_trait"
+]
+resolver = "2"
