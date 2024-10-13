@@ -6,8 +6,14 @@ package.repository = "https://github.com/littleBitsman/json_proc"
 
 [package]
 name = "json_proc"
+description = "provides a proc macro for parsing JSON-like syntax"
 version = "0.1.0"
 edition = "2021"
+
+authors.workspace = true
+license.workspace = true
+readme.workspace = true
+repository.workspace = true
 
 [dependencies]
 json_proc_macro = { path = "./json_proc_macro", version = "0.1.0" }
