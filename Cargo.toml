@@ -1,7 +1,6 @@
 [workspace]
 package.authors = ["littleBitsman"]
 package.license = "MIT"
-package.license-file = "./LICENSE"
 package.readme = "./README.md"
 package.repository = "https://github.com/littleBitsman/json_proc"
 
