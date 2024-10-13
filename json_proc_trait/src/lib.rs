@@ -1,6 +1,8 @@
 //! This crate only provides the [`ToJson`] trait.
 //! 
 //! See the documentation of `json_proc` for more info.
+//! 
+//! [`ToJson`]: crate::ToJson
 
 /// Trait that converts a type to a JSON string.
 /// 

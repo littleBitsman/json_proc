@@ -159,14 +159,14 @@ impl quote::ToTokens for JsonValue {
         match self {
             JsonValue::Object(obj) => obj.to_tokens(tokens),
             JsonValue::Array(arr) => arr.to_tokens(tokens),
-            JsonValue::String(litstr) => quote! { format!("\"{}\"", #litstr) }.to_tokens(tokens),
+            JsonValue::String(litstr) => quote!(format!("\"{}\"", #litstr)).to_tokens(tokens),
             JsonValue::Number(expr) => expr.to_tokens(tokens),
             JsonValue::Bool(b) => {
                 let b = *b;
-                let token = quote! { #b };
+                let token = quote!(#b);
                 token.to_tokens(tokens);
             }
-            JsonValue::Null => quote! { "null" }.to_tokens(tokens),
+            JsonValue::Null => quote!("null").to_tokens(tokens),
             JsonValue::Expr(expr) => {
                 quote!(json_proc::ToJson::to_json_string(&(#expr))).to_tokens(tokens);
             }
@@ -182,9 +182,7 @@ impl quote::ToTokens for JsonObject {
         for pair in pairs {
             let key = &pair.key;
             let value = &pair.value;
-            pairs_tokens.push(quote! {
-                format!("\"{}\":{}", #key, #value)
-            });
+            pairs_tokens.push(quote!(format!("\"{}\":{}", #key, #value)));
         }
         let output = quote! {
             format!("{{{}}}", {
@@ -203,9 +201,7 @@ impl quote::ToTokens for JsonArray {
         for elem in elements {
             elements_tokens.push(quote!(#elem));
         }
-        let output = quote! {
-            format!("[{}]", vec![#(#elements_tokens.to_string()),*].join(","))
-        };
+        let output = quote!(format!("[{}]", vec![#(#elements_tokens.to_string()),*].join(",")));
         output.to_tokens(tokens);
     }
 }
@@ -249,6 +245,8 @@ impl quote::ToTokens for JsonArray {
 /// ```
 ///
 /// [`&str`]: str
+/// [`String`]: std::string::String
+/// [`impl Display`]: std::fmt::Display
 #[proc_macro]
 pub fn json(input: TokenStream) -> TokenStream {
     let json_value = parse_macro_input!(input as JsonValue);
@@ -456,6 +454,8 @@ pub fn error_json(input: TokenStream) -> TokenStream {
 ///     })
 /// }
 /// ```
+/// 
+/// [`error_json`]: crate::error_json
 #[proc_macro]
 pub fn deny_json(input: TokenStream) -> TokenStream {
     error_json(input)
