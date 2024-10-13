@@ -1,11 +1,11 @@
 [package]
 name = "json_proc_trait"
 description = "defines a trait that json_proc_macro uses (avoids cyclic dependencies)"
-version = "0.1.4"
-edition = "2021"
 
 authors.workspace = true
 documentation.workspace = true
+edition.workspace = true
 license.workspace = true
 readme.workspace = true
 repository.workspace = true
+version.workspace = true

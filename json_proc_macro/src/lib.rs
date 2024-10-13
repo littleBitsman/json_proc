@@ -451,7 +451,7 @@ pub fn error_json(input: TokenStream) -> TokenStream {
 /// }
 /// ```
 /// 
-/// [`error_json`]: crate::error_json
+/// [`error_json`]: crate::error_json!
 #[proc_macro]
 pub fn deny_json(input: TokenStream) -> TokenStream {
     error_json(input)
