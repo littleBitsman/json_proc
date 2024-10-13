@@ -5,11 +5,7 @@ use proc_macro::{Diagnostic, TokenStream};
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::quote;
 use syn::{
-    braced, bracketed,
-    parse::{Parse, ParseStream, Result as SynResult},
-    parse_macro_input,
-    spanned::Spanned,
-    token, Expr, Ident, LitBool, LitStr, Token,
+    braced, bracketed, parse::{Parse, ParseStream, Result as SynResult}, parse_macro_input, spanned::Spanned, token, Expr, Ident, ItemStruct, LitBool, LitStr, Member, Token
 };
 
 enum JsonValue {
@@ -172,14 +168,7 @@ impl quote::ToTokens for JsonValue {
             }
             JsonValue::Null => quote! { "null" }.to_tokens(tokens),
             JsonValue::Expr(expr) => {
-                quote! {
-                    {
-                        let value = #expr;
-
-                        json_proc::ToJson::to_json_string(&value)
-                    }
-                }
-                .to_tokens(tokens);
+                quote!(json_proc::ToJson::to_json_string(&(#expr))).to_tokens(tokens);
             }
         }
     }
@@ -194,11 +183,11 @@ impl quote::ToTokens for JsonObject {
             let key = &pair.key;
             let value = &pair.value;
             pairs_tokens.push(quote! {
-                format!("\"{}\": {}", #key, #value)
+                format!("\"{}\":{}", #key, #value)
             });
         }
         let output = quote! {
-            format!("{{ {} }}", {
+            format!("{{{}}}", {
                 let vec: Vec<String> = vec![#(#pairs_tokens.to_string()),*];
                 vec
             }.join(","))
@@ -212,9 +201,7 @@ impl quote::ToTokens for JsonArray {
         let elements = &self.elements;
         let mut elements_tokens = Vec::new();
         for elem in elements {
-            elements_tokens.push(quote! {
-                #elem
-            });
+            elements_tokens.push(quote!(#elem));
         }
         let output = quote! {
             format!("[{}]", vec![#(#elements_tokens.to_string()),*].join(","))
@@ -237,18 +224,22 @@ impl quote::ToTokens for JsonArray {
 ///
 /// Serializing an object:
 /// ```no_run
-/// fn obj<D: Display>(input: D) -> String {
+/// // You have to have the `ToJson` trait restriction since
+/// // the json! macro uses ToJson. Should a struct not 
+/// // implement ToJson, you can use the derive macro.
+/// fn obj<J: json_proc::ToJson>(input: J) -> String {
 ///     json!({
 ///         "hello": "world!",
 ///         thisDidntNeedQuotes: "wow!",
-///         anExpression: input // this will essentially become `format!("{input}")`
+///         // this will essentially become `format!("{}", input.to_json_string())`
+///         anExpression: input 
 ///     })
 /// }
 /// ```
 ///
 /// Serializing an array:
 /// ```no_run
-/// fn arr<D: Display>(input: D) -> String {
+/// fn arr<J: json_proc::ToJson>(input: J) -> String {
 ///     json!([
 ///         input,
 ///         (2 + 11) as f32 / 2.0,
@@ -260,13 +251,9 @@ impl quote::ToTokens for JsonArray {
 /// [`&str`]: str
 #[proc_macro]
 pub fn json(input: TokenStream) -> TokenStream {
-    let json_value: JsonValue = parse_macro_input!(input as JsonValue);
+    let json_value = parse_macro_input!(input as JsonValue);
 
-    let output = quote! {
-        #json_value
-    };
-
-    output.into()
+    quote!(#json_value).into()
 }
 
 mod lints {
@@ -458,7 +445,7 @@ pub fn error_json(input: TokenStream) -> TokenStream {
 
 /// Sets the lint level of all listed lints to error.
 /// This attribute is an alias for [`error_json`].
-/// 
+///
 /// Example:
 /// ```no_run
 /// json_proc::deny_json!(duplicate_keys);
@@ -472,4 +459,77 @@ pub fn error_json(input: TokenStream) -> TokenStream {
 #[proc_macro]
 pub fn deny_json(input: TokenStream) -> TokenStream {
     error_json(input)
+}
+
+/// Derive the ToJson trait for a struct.
+/// 
+/// Examples:
+/// 
+/// ```no_run
+/// #[derive(ToJson)]
+/// struct Example1 {
+///     field1: bool,
+///     field2: i8
+/// }
+/// 
+/// fn print() {
+///     println!("{}", json!(Example1 {
+///         field1: true,
+///         field2: -2
+///     }))
+/// }
+/// ```
+#[proc_macro_derive(ToJson)]
+// TODO: add enum support
+pub fn derive(item: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(item as ItemStruct);
+
+    let ident = input.ident;
+    let mut members = input.fields.members().peekable();
+    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+
+    if members.peek().is_some_and(|v| matches!(v, Member::Unnamed(_))) {
+        if members.clone().count() == 1 {
+            // Generate an impl that uses the first (and only) element in the tuple.
+            quote! {
+                impl #impl_generics ToJson for #ident #ty_generics #where_clause {
+                    fn to_json_string(&self) -> String {        
+                        json_proc::ToJson::to_json_string(&self.0)
+                    }
+                }
+            }
+        } else {
+            // Generate an array-like impl.
+            quote! {
+                impl #impl_generics ToJson for #ident #ty_generics #where_clause {
+                    fn to_json_string(&self) -> String {
+                        let mut values: Vec<String> = Vec::new();
+        
+                        #(
+                            values.push(json_proc::ToJson::to_json_string(&self.#members));
+                        )*
+        
+                        format!("[{}]", values.into_iter().map(|val| format!("{val}")).collect::<Vec<String>>().join(","))
+                    }
+                }
+            }
+        }
+    } else {
+        // Generate an object-like impl.
+        quote! {
+            impl #impl_generics ToJson for #ident #ty_generics #where_clause {
+                fn to_json_string(&self) -> String {
+                    let mut pairs: Vec<(String, String)> = Vec::new();
+    
+                    #(
+                        let key = stringify!(#members);
+                        let value = json_proc::ToJson::to_json_string(&self.#members);
+                        pairs.push((key.to_string(), value));
+                    )*
+    
+                    format!("{{{}}}", pairs.into_iter().map(|(key, val)| format!("\"{key}\":{val}")).collect::<Vec<String>>().join(","))
+                }
+            }
+        }
+    } .into()
 }

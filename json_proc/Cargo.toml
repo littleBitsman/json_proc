@@ -1,12 +1,15 @@
 [package]
 name = "json_proc"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
 
 [dependencies]
 json_proc_macro = { path = "../json_proc_macro" }
 json_proc_trait = { path = "../json_proc_trait" }
 
+[dev-dependencies]
+serde_json = "1.0.128"
+
 [[bin]]
-name = "test2"
-path = "./tests/main2.rs"
+name = "test"
+path = ".\\tests\\main.rs"

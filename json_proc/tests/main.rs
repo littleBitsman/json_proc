@@ -2,15 +2,35 @@ fn ting(value: f32) -> f32 {
     value
 }
 
-#[cfg(test)]
+fn main() {
+    tests::test()
+}
+
 mod tests {
     use super::*;
     use json_proc::*;
 
-    #[test]
-    fn test() {
+    #[derive(ToJson)]
+    struct Test {
+        yes: String
+    }
+
+    #[cfg(test)]
+    use serde_json::{from_str, to_string, Value};
+
+    #[cfg(test)]
+    macro_rules! serde_json_str {
+        ($ex:expr) => {
+            to_string(&from_str::<Value>(&$ex).unwrap()).unwrap()
+        };
+    }
+
+    #[cfg_attr(test, test)]
+    pub fn test() {
         let value = String::from("ga");
         let other_value = 1f32/32f32;
+
+        let strc = Test { yes: String::from("hello") };
         
         println!("{}", json!({
             "hello": (2 + 4) as f32 + other_value + (b'e' as f32) + ting(100.0),
@@ -28,7 +48,8 @@ mod tests {
             ]
             ,
             e2: false,
-            es2: format!("hello: {} {hello}", "world!", hello = value)
+            es2: format!("hello: {} {hello}", "world!", hello = value),
+            test22: strc
         }));
     
         // println!("{}", core::any::type_name_of_val(&None::<String>));
@@ -41,7 +62,7 @@ mod tests {
             "age": 30,
             "active": true
         });
-        assert_eq!(json_str.to_string(), r#"{"name": "John Doe", "age": "30", "active": "true"}"#);
+        assert_eq!(serde_json_str!(json_str), serde_json_str!(r#"{"name":"John Doe","age":30,"active":true}"#));
     }
 
     #[test]
@@ -49,7 +70,7 @@ mod tests {
         let json_str = json!({
             "greeting": String::from("Hello, world!"),
         });
-        assert_eq!(json_str.to_string(), r#"{"greeting": "Hello, world!"}"#);
+        assert_eq!(serde_json_str!(json_str), serde_json_str!(r#"{"greeting":"Hello, world!"}"#));
     }
 
     #[test]
@@ -61,7 +82,7 @@ mod tests {
             },
             "is_admin": false,
         });
-        assert_eq!(json_str.to_string(), r#"{"user": {"name": "Jane Doe", "age": "25"}, "is_admin": "false"}"#);
+        assert_eq!(serde_json_str!(json_str), serde_json_str!(r#"{"user":{"name":"Jane Doe","age":25},"is_admin":false}"#));
     }
 
     #[test]
@@ -70,13 +91,13 @@ mod tests {
             "message": "This is a \"quoted\" word.",
             "newline": "First line.\nSecond line.",
         });
-        assert_eq!(json_str.to_string(), r#"{"message": "This is a \"quoted\" word.", "newline": "First line.\nSecond line."}"#);
+        assert_eq!(serde_json_str!(json_str), serde_json_str!("{\"message\":\"This is a \\\"quoted\\\" word.\",\"newline\":\"First line.\\nSecond line.\"}"));
     }
 
     #[test]
     fn test_empty_json() {
         let json_str = json!({});
-        assert_eq!(json_str.to_string(), r#"{}"#);
+        assert_eq!(serde_json_str!(json_str), serde_json_str!(r#"{}"#));
     }
 
     #[test]
@@ -86,6 +107,6 @@ mod tests {
             "answer": number,
             "text": String::from("The answer is"),
         });
-        assert_eq!(json_str.to_string(), r#"{"answer": "42", "text": "The answer is"}"#);
+        assert_eq!(serde_json_str!(json_str), serde_json_str!(r#"{"answer":42,"text":"The answer is"}"#));
     }
 }
