@@ -1,16 +1,15 @@
 [package]
 name = "json_proc_macro"
-version = "1.0.0"
+description = "provides a proc macro for parsing JSON-like syntax"
+version = "0.1.0"
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 quote = "1.0.37"
 syn = { version = "2.0.79", features = ["full"] }
 proc-macro2 = "1.0.86"
 
-json_proc_trait = { path = "../json_proc_trait" }
+json_proc_trait = { path = "../json_proc_trait", version = "0.1.0" }
 
 [lib]
 proc-macro = true

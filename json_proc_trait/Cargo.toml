@@ -1,5 +1,5 @@
 [package]
 name = "json_proc_trait"
 description = "defines a trait that json_proc_macro uses (avoids cyclic dependencies)"
-version = "1.0.0"
+version = "0.1.0"
 edition = "2021"
