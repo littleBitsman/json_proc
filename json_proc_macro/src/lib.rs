@@ -1,11 +1,10 @@
-#![expect(dead_code)]
 #![feature(proc_macro_diagnostic)]
 
 use proc_macro::{Diagnostic, TokenStream};
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::quote;
 use syn::{
-    braced, bracketed, parse::{Parse, ParseStream, Result as SynResult}, parse_macro_input, spanned::Spanned, token, Expr, Ident, ItemStruct, LitBool, LitStr, Member, Token
+    braced, bracketed, parse::{Parse, ParseStream, Result as SynResult}, parse_macro_input, token, Expr, Ident, ItemStruct, LitBool, LitStr, Member, Token
 };
 
 enum JsonValue {
@@ -14,24 +13,21 @@ enum JsonValue {
     String(LitStr),
     Number(Expr),
     Bool(bool),
-    Expr(Expr),
-    Null,
+    Expr(Expr)
 }
 
 struct JsonKeyValue {
     key: String,
     value: JsonValue,
-    key_span: Span,
+    key_span: Span
 }
 
 struct JsonObject {
-    pairs: Vec<JsonKeyValue>,
-    span: Span,
+    pairs: Vec<JsonKeyValue>
 }
 
 struct JsonArray {
-    elements: Vec<JsonValue>,
-    span: Span,
+    elements: Vec<JsonValue>
 }
 
 impl Parse for JsonKeyValue {
@@ -91,7 +87,7 @@ impl Parse for JsonObject {
 
         Ok(JsonObject {
             pairs,
-            span: input.span(),
+            // span: input.span(),
         })
     }
 }
@@ -112,11 +108,12 @@ impl Parse for JsonArray {
 
         Ok(JsonArray {
             elements,
-            span: input.span(),
+            // span: input.span(),
         })
     }
 }
 
+/* // This is never used
 impl JsonValue {
     fn span(&self) -> Option<Span> {
         match self {
@@ -125,11 +122,11 @@ impl JsonValue {
             JsonValue::String(lit_str) => Some(lit_str.span()),
             JsonValue::Number(expr) => Some(expr.span()),
             JsonValue::Bool(_) => None,
-            JsonValue::Expr(expr) => Some(expr.span()),
-            JsonValue::Null => None,
+            JsonValue::Expr(expr) => Some(expr.span())
         }
     }
 }
+*/
 
 impl Parse for JsonValue {
     fn parse(input: ParseStream) -> SynResult<Self> {
@@ -166,7 +163,6 @@ impl quote::ToTokens for JsonValue {
                 let token = quote!(#b);
                 token.to_tokens(tokens);
             }
-            JsonValue::Null => quote!("null").to_tokens(tokens),
             JsonValue::Expr(expr) => {
                 quote!(json_proc::ToJson::to_json_string(&(#expr))).to_tokens(tokens);
             }
@@ -481,7 +477,7 @@ pub fn deny_json(input: TokenStream) -> TokenStream {
 /// ```
 #[proc_macro_derive(ToJson)]
 // TODO: add enum support
-pub fn derive(item: TokenStream) -> TokenStream {
+pub fn json_derive(item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as ItemStruct);
 
     let ident = input.ident;
