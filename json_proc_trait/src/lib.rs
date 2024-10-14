@@ -19,6 +19,7 @@ macro_rules! display_json_impl {
     { $($ty:ty $(,)?)* } => {
         $(
             impl ToJson for $ty {
+                #[inline]
                 fn to_json_string(&self) -> String {
                     format!("{}", self)
                 }
@@ -30,7 +31,9 @@ macro_rules! display_json_impl {
 display_json_impl! {
     u8 u16 u32 u64 usize,
     i8 i16 i32 i64 isize,
-    f32 f64
+    f32 f64,
+    bool,
+
 }
 
 // FIXME: this doesn't correctly handle newlines
@@ -40,8 +43,9 @@ macro_rules! string_json_impl {
     { $($ty:ty $(,)?)* } => {
         $(
             impl ToJson for $ty {
+                #[inline]
                 fn to_json_string(&self) -> String {
-                    format!(r#""{}""#, self.replace('"', "\\\""))
+                    format!(r#""{}""#, self.to_string().replace('"', "\\\""))
                 }
             }
         )*
@@ -50,10 +54,11 @@ macro_rules! string_json_impl {
 
 string_json_impl! {
     String
-    &str
+    &str char
 }
 
 impl<T: ToJson> ToJson for Option<T> {
+    #[inline]
     fn to_json_string(&self) -> String {
         match self {
             Some(t) => t.to_json_string(),
@@ -62,8 +67,48 @@ impl<T: ToJson> ToJson for Option<T> {
     }
 }
 
+impl<T, E> ToJson for Result<T, E>
+where
+    T: ToJson,
+    E: ToJson,
+{
+    #[inline]
+    fn to_json_string(&self) -> String {
+        match self {
+            Ok(t) => t.to_json_string(),
+            Err(e) => e.to_json_string(),
+        }
+    }
+}
+
 impl ToJson for () {
+    #[inline]
     fn to_json_string(&self) -> String {
         String::from("null")
+    }
+}
+
+impl<T: ToJson> ToJson for &[T] {
+    #[inline]
+    fn to_json_string(&self) -> String {
+        format!(
+            "[{}]",
+            self.iter()
+                .map(|v| v.to_json_string())
+                .collect::<Vec<String>>()
+                .join(",")
+        )
+    }
+}
+impl<T: ToJson, const N: usize> ToJson for [T; N] {
+    #[inline]
+    fn to_json_string(&self) -> String {
+        self.as_slice().to_json_string()
+    }
+}
+impl<T: ToJson> ToJson for Vec<T> {
+    #[inline]
+    fn to_json_string(&self) -> String {
+        self.as_slice().to_json_string()
     }
 }
