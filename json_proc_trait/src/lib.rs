@@ -41,7 +41,7 @@ macro_rules! string_json_impl {
         $(
             impl ToJson for $ty {
                 fn to_json_string(&self) -> String {
-                    format!(r#""{}""#, self.replace('"', "\""))
+                    format!(r#""{}""#, self.replace('"', "\\\""))
                 }
             }
         )*
