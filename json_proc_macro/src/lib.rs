@@ -251,22 +251,13 @@ pub fn json(input: TokenStream) -> TokenStream {
 }
 
 mod lints {
-    use std::{collections::BTreeMap, ops::Deref, sync::Mutex};
+    use std::{collections::BTreeMap, sync::Mutex};
 
     use proc_macro::{Span, TokenStream};
     use syn::{
         parse::{Parse, ParseStream},
         parse_macro_input, Error as SynError, Ident, Result as SynResult, Token,
     };
-
-    pub struct SpanWrapper(Span);
-    impl Deref for SpanWrapper {
-        type Target = Span;
-
-        fn deref(&self) -> &Self::Target {
-            &self.0
-        }
-    }
 
     #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
     pub enum Lint {
