@@ -22,7 +22,6 @@ version.workspace = true
 [dependencies]
 json_proc_macro = { path = "./json_proc_macro", version = "0.2.0" }
 
-# The trait hasn't changed so this can use any version
 json_proc_trait = { path = "./json_proc_trait", version = "0.2.0" }
 
 [dev-dependencies]

@@ -4,6 +4,8 @@
 //!
 //! [`ToJson`]: crate::ToJson
 
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
+
 /// Trait that converts a type to a JSON string.
 ///
 /// `json_proc_macro` (exported by `json_proc`) provides
@@ -29,11 +31,10 @@ macro_rules! display_json_impl {
 }
 
 display_json_impl! {
-    u8 u16 u32 u64 usize,
-    i8 i16 i32 i64 isize,
+    u8 u16 u32 u64 u128 usize,
+    i8 i16 i32 i64 i128 isize,
     f32 f64,
     bool,
-
 }
 
 // FIXME: this doesn't correctly handle newlines
@@ -110,5 +111,78 @@ impl<T: ToJson> ToJson for Vec<T> {
     #[inline]
     fn to_json_string(&self) -> String {
         self.as_slice().to_json_string()
+    }
+}
+
+impl<K, V> ToJson for BTreeMap<K, V>
+where
+    K: ToString,
+    V: ToJson,
+{
+    #[inline]
+    fn to_json_string(&self) -> String {
+        format!(
+            "{{{}}}",
+            self.iter()
+                .map(|(key, value)| format!(r#""{}":{}"#, key.to_string(), value.to_json_string()))
+                .collect::<Vec<String>>()
+                .join(",")
+        )
+    }
+}
+
+impl<K, V> ToJson for HashMap<K, V>
+where
+    K: ToString,
+    V: ToJson,
+{
+    #[inline]
+    fn to_json_string(&self) -> String {
+        format!(
+            "{{{}}}",
+            self.iter()
+                .map(|(key, value)| format!(r#""{}":{}"#, key.to_string(), value.to_json_string()))
+                .collect::<Vec<String>>()
+                .join(",")
+        )
+    }
+}
+
+impl<T: ToJson> ToJson for BTreeSet<T> {
+    #[inline]
+    fn to_json_string(&self) -> String {
+        format!(
+            "[{}]",
+            self.iter()
+                .map(|v| v.to_json_string())
+                .collect::<Vec<String>>()
+                .join(",")
+        )
+    }
+}
+
+impl<T: ToJson> ToJson for HashSet<T> {
+    #[inline]
+    fn to_json_string(&self) -> String {
+        format!(
+            "[{}]",
+            self.iter()
+                .map(|v| v.to_json_string())
+                .collect::<Vec<String>>()
+                .join(",")
+        )
+    }
+}
+
+impl<T: ToJson> ToJson for VecDeque<T> {
+    #[inline]
+    fn to_json_string(&self) -> String {
+        format!(
+            "[{}]",
+            self.iter()
+                .map(|v| v.to_json_string())
+                .collect::<Vec<String>>()
+                .join(",")
+        )
     }
 }
