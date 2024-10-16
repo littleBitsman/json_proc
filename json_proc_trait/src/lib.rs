@@ -1,15 +1,17 @@
 //! This crate only provides the [`ToJson`] trait.
 //!
-//! See the documentation of `json_proc` for more info.
+//! See the documentation of [`json_proc`] for more info.
 //!
 //! [`ToJson`]: crate::ToJson
+//! [`json_proc`]: https://docs.rs/json_proc/latest/json_proc
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
 /// Trait that converts a type to a JSON string.
 ///
-/// `json_proc_macro` (exported by `json_proc`) provides
-/// a macro that derives this trait.
+/// [`json_proc`] provides a macro that derives this trait.
+/// 
+/// [`json_proc`]: https://docs.rs/json_proc/latest/json_proc
 pub trait ToJson {
     /// Converts self to a JSON string.
     ///
@@ -23,7 +25,7 @@ macro_rules! display_json_impl {
             impl ToJson for $ty {
                 #[inline]
                 fn to_json_string(&self) -> String {
-                    format!("{}", self)
+                    self.to_string()
                 }
             }
         )*
@@ -90,7 +92,6 @@ impl ToJson for () {
 }
 
 impl<T: ToJson> ToJson for &[T] {
-    #[inline]
     fn to_json_string(&self) -> String {
         format!(
             "[{}]",
@@ -119,7 +120,6 @@ where
     K: ToString,
     V: ToJson,
 {
-    #[inline]
     fn to_json_string(&self) -> String {
         format!(
             "{{{}}}",
@@ -136,7 +136,6 @@ where
     K: ToString,
     V: ToJson,
 {
-    #[inline]
     fn to_json_string(&self) -> String {
         format!(
             "{{{}}}",
@@ -149,7 +148,6 @@ where
 }
 
 impl<T: ToJson> ToJson for BTreeSet<T> {
-    #[inline]
     fn to_json_string(&self) -> String {
         format!(
             "[{}]",
@@ -162,7 +160,6 @@ impl<T: ToJson> ToJson for BTreeSet<T> {
 }
 
 impl<T: ToJson> ToJson for HashSet<T> {
-    #[inline]
     fn to_json_string(&self) -> String {
         format!(
             "[{}]",
@@ -175,7 +172,6 @@ impl<T: ToJson> ToJson for HashSet<T> {
 }
 
 impl<T: ToJson> ToJson for VecDeque<T> {
-    #[inline]
     fn to_json_string(&self) -> String {
         format!(
             "[{}]",

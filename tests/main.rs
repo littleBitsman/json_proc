@@ -15,6 +15,14 @@ mod tests {
         yes: String
     }
 
+    #[derive(ToJson)]
+    enum Test2 {
+        Hello {
+            hello: String
+        },
+        Two(String, u8)
+    }
+
     #[cfg(test)]
     use serde_json::{from_str, to_string, Value};
 
@@ -49,7 +57,11 @@ mod tests {
             ,
             e2: false,
             es2: format!("hello: {} {hello}", "world!", hello = value),
-            test22: strc
+            test22: strc,
+            test2Enum: [
+                Test2::Hello { hello: String::from("this is Hello") },
+                Test2::Two(String::from("this is 2"), 2),
+            ]
         }));
     
         // println!("{}", core::any::type_name_of_val(&None::<String>));
