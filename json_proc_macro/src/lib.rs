@@ -1,11 +1,21 @@
 #![feature(proc_macro_diagnostic)]
 
-use proc_macro::{Diagnostic, TokenStream};
+use proc_macro::{Diagnostic, Level, TokenStream};
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::quote;
 use syn::{
-    braced, bracketed, parse::{Parse, ParseStream, Result as SynResult}, parse_macro_input, token, Expr, Ident, ItemStruct, LitBool, LitStr, Member, Token
+    braced, bracketed, parse,
+    parse::{Parse, ParseStream, Result as SynResult},
+    parse_macro_input, token, Expr, Ident, ItemEnum, ItemStruct, LitBool, LitStr, Member, Token,
 };
+
+mod util {
+    use std::iter::Iterator;
+
+    pub fn iter_len<T, I: Iterator<Item = T> + Clone>(iter: &I) -> usize {
+        iter.clone().count()
+    }
+}
 
 enum JsonValue {
     Object(JsonObject),
@@ -13,21 +23,21 @@ enum JsonValue {
     String(LitStr),
     Number(Expr),
     Bool(bool),
-    Expr(Expr)
+    Expr(Expr),
 }
 
 struct JsonKeyValue {
     key: String,
     value: JsonValue,
-    key_span: Span
+    key_span: Span,
 }
 
 struct JsonObject {
-    pairs: Vec<JsonKeyValue>
+    pairs: Vec<JsonKeyValue>,
 }
 
 struct JsonArray {
-    elements: Vec<JsonValue>
+    elements: Vec<JsonValue>,
 }
 
 impl Parse for JsonKeyValue {
@@ -67,20 +77,17 @@ impl Parse for JsonObject {
         }
 
         {
-            let lint_setting =
-                lints::get_lint_level(lints::Lint::DuplicateKeys).unwrap_or_default();
             let mut map: Vec<(String, Span)> = Vec::new();
             for JsonKeyValue { key, key_span, .. } in pairs.iter() {
-                if let (Some((_, span2)), Some(level)) = (
-                    map.iter().find(|(key2, _)| key2.clone() == key.clone()),
-                    lint_setting.level(),
-                ) {
-                    let mut d = Diagnostic::new(level, format!("duplicate key `{key}` in object"));
+                if let Some((_, span2)) = 
+                    map.iter().find(|(key2, _)| key2.clone() == key.clone()) 
+                {
+                    let mut d = Diagnostic::new(Level::Error, format!("duplicate key `{key}` in object"));
                     d.set_spans(key_span.unwrap());
                     d = d.span_note(span2.unwrap(), "key first defined here");
                     d.emit();
                 } else {
-                    map.push((key.clone(), key_span.clone()));
+                    map.push((key.clone(), *key_span));
                 }
             }
         }
@@ -197,7 +204,10 @@ impl quote::ToTokens for JsonArray {
         for elem in elements {
             elements_tokens.push(quote!(#elem));
         }
-        let output = quote!(format!("[{}]", vec![#(#elements_tokens.to_string()),*].join(",")));
+        let output = quote!(format!(
+            "[{}]",
+            vec![#(#elements_tokens.to_string()),*].join(",")
+        ));
         output.to_tokens(tokens);
     }
 }
@@ -217,14 +227,14 @@ impl quote::ToTokens for JsonArray {
 /// Serializing an object:
 /// ```no_run
 /// // You have to have the `ToJson` trait restriction since
-/// // the json! macro uses ToJson. Should a struct not 
+/// // the json! macro uses ToJson. Should a struct not
 /// // implement ToJson, you can use the derive macro.
 /// fn obj<J: json_proc::ToJson>(input: J) -> String {
 ///     json!({
 ///         "hello": "world!",
 ///         thisDidntNeedQuotes: "wow!",
 ///         // this will essentially become `format!("{}", input.to_json_string())`
-///         anExpression: input 
+///         anExpression: input
 ///     })
 /// }
 /// ```
@@ -250,215 +260,17 @@ pub fn json(input: TokenStream) -> TokenStream {
     quote!(#json_value).into()
 }
 
-mod lints {
-    use std::{collections::BTreeMap, sync::Mutex};
-
-    use proc_macro::{Span, TokenStream};
-    use syn::{
-        parse::{Parse, ParseStream},
-        parse_macro_input, Error as SynError, Ident, Result as SynResult, Token,
-    };
-
-    #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-    pub enum Lint {
-        DuplicateKeys,
-    }
-
-    impl TryFrom<&str> for Lint {
-        type Error = ();
-
-        fn try_from(value: &str) -> Result<Self, Self::Error> {
-            match value.to_string().as_str() {
-                "duplicate_keys" => Ok(Self::DuplicateKeys),
-                _ => Err(()),
-            }
-        }
-    }
-
-    impl Parse for Lint {
-        fn parse(input: ParseStream) -> SynResult<Self> {
-            let ident = input.parse::<Ident>()?;
-            Self::try_from(ident.to_string().as_str())
-                .map_err(|_| SynError::new(ident.span(), "invalid lint"))
-        }
-    }
-
-    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
-    pub enum Level {
-        Allow,
-        Warning,
-        #[default]
-        Error,
-    }
-    impl Level {
-        pub fn level(self) -> Option<proc_macro::Level> {
-            match self {
-                Self::Allow => None,
-                Self::Warning => Some(proc_macro::Level::Warning),
-                Self::Error => Some(proc_macro::Level::Error),
-            }
-        }
-    }
-
-    static LINTS: Mutex<BTreeMap<Lint, Level>> = Mutex::new(BTreeMap::new());
-
-    pub fn get_lint_level<'a>(lint: Lint) -> Option<Level> {
-        LINTS.lock().unwrap().get_mut(&lint).copied()
-    }
-
-    struct LintList(Vec<Lint>);
-    impl Parse for LintList {
-        fn parse(input: ParseStream) -> SynResult<Self> {
-            let mut lints = Vec::new();
-
-            while !input.is_empty() {
-                lints.push(input.parse::<Lint>()?);
-                if input.peek(Token![,]) {
-                    input.parse::<Token![,]>()?;
-                }
-            }
-
-            Ok(Self(lints))
-        }
-    }
-
-    pub fn allow(input: TokenStream) -> TokenStream {
-        let lints = parse_macro_input!(input as LintList).0;
-
-        let mut lock = LINTS.lock().unwrap();
-        if lints.is_empty() {
-            Span::call_site()
-                .warning("no lint levels are being defined in this macro call")
-                .help("remove this macro call")
-                .emit();
-        } else {
-            for lint in lints {
-                lock.insert(lint, Level::Allow);
-            }
-        }
-
-        TokenStream::new()
-    }
-
-    pub fn warn(input: TokenStream) -> TokenStream {
-        let lints = parse_macro_input!(input as LintList).0;
-
-        let mut lock = LINTS.lock().unwrap();
-        if lints.is_empty() {
-            Span::call_site()
-                .warning("no lint levels are being defined in this macro call")
-                .help("remove this macro call")
-                .emit();
-        } else {
-            for lint in lints {
-                lock.insert(lint, Level::Warning);
-            }
-        }
-
-        TokenStream::new()
-    }
-
-    pub fn error(input: TokenStream) -> TokenStream {
-        let lints = parse_macro_input!(input as LintList).0;
-
-        let mut lock = LINTS.lock().unwrap();
-        if lints.is_empty() {
-            Span::call_site()
-                .warning("no lint levels are being defined in this macro call")
-                .help("remove this macro call")
-                .emit();
-        } else {
-            for lint in lints {
-                lock.insert(lint, Level::Error);
-            }
-        }
-
-        TokenStream::new()
-    }
-}
-
-/// Sets the lint level of all listed lints to none.
-///
-/// Example:
-/// ```no_run
-/// json_proc::allow_json!(duplicate_keys);
-/// fn test() {
-///     json!({
-///         "key": 2,
-///         "key": 3 // duplicate, will not do ANYTHING
-///     })
-/// }
-/// ```
-#[proc_macro]
-pub fn allow_json(input: TokenStream) -> TokenStream {
-    lints::allow(input)
-}
-
-/// Sets the lint level of all listed lints to warning.
-///
-/// Example:
-/// ```no_run
-/// json_proc::warn_json!(duplicate_keys);
-/// fn test() {
-///     json!({
-///         "key": 2,
-///         "key": 3 // duplicate, will warn
-///     })
-/// }
-/// ```
-#[proc_macro]
-pub fn warn_json(input: TokenStream) -> TokenStream {
-    lints::warn(input)
-}
-
-/// Sets the lint level of all listed lints to error.
-///
-/// Example:
-/// ```no_run
-/// json_proc::error_json!(duplicate_keys);
-/// fn test() {
-///     json!({
-///         "key": 2,
-///         "key": 3 // duplicate, will error
-///     })
-/// }
-/// ```
-#[proc_macro]
-pub fn error_json(input: TokenStream) -> TokenStream {
-    lints::error(input)
-}
-
-/// Sets the lint level of all listed lints to error.
-/// This attribute is an alias for [`error_json`].
-///
-/// Example:
-/// ```no_run
-/// json_proc::deny_json!(duplicate_keys);
-/// fn test() {
-///     json!({
-///         "key": 2,
-///         "key": 3 // duplicate, will error
-///     })
-/// }
-/// ```
-/// 
-/// [`error_json`]: crate::error_json!
-#[proc_macro]
-pub fn deny_json(input: TokenStream) -> TokenStream {
-    error_json(input)
-}
-
 /// Derive the ToJson trait for a struct.
-/// 
+///
 /// Examples:
-/// 
+///
 /// ```no_run
 /// #[derive(ToJson)]
 /// struct Example1 {
 ///     field1: bool,
 ///     field2: i8
 /// }
-/// 
+///
 /// fn print() {
 ///     println!("{}", json!(Example1 {
 ///         field1: true,
@@ -469,54 +281,117 @@ pub fn deny_json(input: TokenStream) -> TokenStream {
 #[proc_macro_derive(ToJson)]
 // TODO: add enum support
 pub fn json_derive(item: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(item as ItemStruct);
+    if let Ok(input) = parse::<ItemStruct>(item.clone()) {
+        let ident = input.ident;
+        let mut members = input.fields.members().peekable();
+        let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
-    let ident = input.ident;
-    let mut members = input.fields.members().peekable();
-    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+        let fn_impl = if members
+            .peek()
+            .is_some_and(|v| matches!(v, Member::Unnamed(_)))
+        {
+            if util::iter_len(&members) == 1 {
+                // Generate an impl that uses the first (and only) element in the tuple.
+                quote!(json_proc::ToJson::to_json_string(&self.0))
+            } else {
+                // Generate an array-like impl.
+                quote! {
+                    let values: Vec<String> = vec![#(json_proc::ToJson::to_json_string(&self.#members)),*];
 
-    if members.peek().is_some_and(|v| matches!(v, Member::Unnamed(_))) {
-        if members.clone().count() == 1 {
-            // Generate an impl that uses the first (and only) element in the tuple.
-            quote! {
-                impl #impl_generics ToJson for #ident #ty_generics #where_clause {
-                    fn to_json_string(&self) -> String {        
-                        json_proc::ToJson::to_json_string(&self.0)
-                    }
+                    format!("[{}]", values.into_iter().map(|val| format!("{val}")).collect::<Vec<String>>().join(","))
                 }
             }
         } else {
-            // Generate an array-like impl.
+            // Generate an object-like impl.
             quote! {
-                impl #impl_generics ToJson for #ident #ty_generics #where_clause {
-                    fn to_json_string(&self) -> String {
-                        let mut values: Vec<String> = Vec::new();
-        
-                        #(
-                            values.push(json_proc::ToJson::to_json_string(&self.#members));
-                        )*
-        
+                let mut pairs: Vec<(String, String)> = Vec::new();
+
+                #({
+                    let key = stringify!(#members);
+                    let value = json_proc::ToJson::to_json_string(&self.#members);
+                    pairs.push((key.to_string(), value));
+                })*
+
+                format!("{{{}}}", pairs.into_iter().map(|(key, val)| format!("\"{key}\":{val}")).collect::<Vec<String>>().join(","))
+            }
+        };
+
+        quote! {
+            impl #impl_generics ToJson for #ident #ty_generics #where_clause {
+                fn to_json_string(&self) -> String {
+                    #fn_impl
+                }
+            }
+        }
+        .into()
+    } else if let Ok(input) = parse::<ItemEnum>(item) {
+        let ident = input.ident;
+        let variants = input.variants.iter().peekable();
+        let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+
+        let mut streams: Vec<TokenStream2> = Vec::new();
+        for var in variants {
+            // Handle like a struct.
+            let varident = &var.ident;
+            let mut members = var.fields.members().peekable();
+            let iter_len = util::iter_len(&members);
+            let str = if iter_len == 0 {
+                quote!(Self::#varident => stringify!(#ident).to_string())
+            } else if members
+                .peek()
+                .is_some_and(|v| matches!(v, Member::Unnamed(_)))
+            {
+                if iter_len == 1 {
+                    // Generate an impl that uses the first (and only) element in the tuple.
+                    quote!(Self::#varident(a) => json_proc::ToJson::to_json_string(a))
+                } else {
+                    // Generate an array-like impl.
+                    let members = members.map(|v| match v {
+                        Member::Unnamed(i) => {
+                            Ident::new(format!("arg{}", i.index).as_str(), i.span)
+                        }
+                        _ => unreachable!(),
+                    });
+                    let members2 = members.clone();
+                    quote!(Self::#varident( #(#members2),* ) => {
+                        let values: Vec<String> = vec![#(json_proc::ToJson::to_json_string(#members)),*];
+
                         format!("[{}]", values.into_iter().map(|val| format!("{val}")).collect::<Vec<String>>().join(","))
+                    })
+                }
+            } else {
+                // Generate an object-like impl.
+                let members2 = members.clone();
+                quote!(Self::#varident { #(#members2),* } => {
+                    let mut pairs: Vec<(String, String)> = Vec::new();
+
+                    #({
+                        let key = stringify!(#members);
+                        let value = json_proc::ToJson::to_json_string(#members);
+                        pairs.push((key.to_string(), value));
+                    })*
+
+                    format!("{{{}}}", pairs.into_iter().map(|(key, val)| format!("\"{key}\":{val}")).collect::<Vec<String>>().join(","))
+                })
+            };
+
+            streams.push(str)
+        }
+
+        quote! {
+            impl #impl_generics ToJson for #ident #ty_generics #where_clause {
+                fn to_json_string(&self) -> String {
+                    match self {
+                        #(#streams),*
                     }
                 }
             }
         }
+        .into()
     } else {
-        // Generate an object-like impl.
-        quote! {
-            impl #impl_generics ToJson for #ident #ty_generics #where_clause {
-                fn to_json_string(&self) -> String {
-                    let mut pairs: Vec<(String, String)> = Vec::new();
-    
-                    #(
-                        let key = stringify!(#members);
-                        let value = json_proc::ToJson::to_json_string(&self.#members);
-                        pairs.push((key.to_string(), value));
-                    )*
-    
-                    format!("{{{}}}", pairs.into_iter().map(|(key, val)| format!("\"{key}\":{val}")).collect::<Vec<String>>().join(","))
-                }
-            }
-        }
-    } .into()
+        quote!(compile_error!(
+            "expected struct or enum for deriving ToJson"
+        ))
+        .into()
+    }
 }
