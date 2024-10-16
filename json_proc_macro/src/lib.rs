@@ -21,7 +21,6 @@ enum JsonValue {
     Object(JsonObject),
     Array(JsonArray),
     String(LitStr),
-    Number(Expr),
     Bool(bool),
     Expr(Expr),
 }
@@ -142,9 +141,6 @@ impl Parse for JsonValue {
             Ok(JsonValue::String(s))
         } else if input.peek(LitBool) {
             Ok(JsonValue::Bool(input.parse::<LitBool>()?.value))
-        } else if input.peek(Ident) || input.peek(syn::token::Paren) {
-            let expr: Expr = input.parse()?;
-            Ok(JsonValue::Expr(expr))
         } else if input.peek(token::Brace) {
             let obj: JsonObject = input.parse()?;
             Ok(JsonValue::Object(obj))
@@ -153,7 +149,7 @@ impl Parse for JsonValue {
             Ok(JsonValue::Array(arr))
         } else {
             let expr: Expr = input.parse()?;
-            Ok(JsonValue::Number(expr))
+            Ok(JsonValue::Expr(expr))
         }
     }
 }
@@ -164,7 +160,6 @@ impl quote::ToTokens for JsonValue {
             JsonValue::Object(obj) => obj.to_tokens(tokens),
             JsonValue::Array(arr) => arr.to_tokens(tokens),
             JsonValue::String(litstr) => quote!(format!("\"{}\"", #litstr)).to_tokens(tokens),
-            JsonValue::Number(expr) => expr.to_tokens(tokens),
             JsonValue::Bool(b) => {
                 let b = *b;
                 let token = quote!(#b);
