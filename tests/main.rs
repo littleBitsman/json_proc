@@ -7,6 +7,8 @@ fn main() {
 }
 
 mod tests {
+    use std::time::Instant;
+
     use super::*;
     use json_proc::*;
 
@@ -24,12 +26,9 @@ mod tests {
     }
 
     #[cfg(test)]
-    use serde_json::{from_str, to_string, Value};
-
-    #[cfg(test)]
     macro_rules! serde_json_str {
-        ($ex:expr) => {
-            to_string(&from_str::<Value>(&$ex).unwrap()).unwrap()
+        ($($json:tt)+) => {
+            serde_json::to_string(&serde_json::json!($($json)+)).unwrap()
         };
     }
 
@@ -65,6 +64,29 @@ mod tests {
         }));
     
         // println!("{}", core::any::type_name_of_val(&None::<String>));
+    }
+
+    #[test]
+    fn bench() {
+        let hello = String::from("bad");
+        let start = Instant::now();
+        serde_json_str!({
+            "hello": String::from("thisIsAString"),
+            "struct": {
+                "yes": String::new()
+            },
+            hello.clone(): hello
+        });
+        println!("{:?}", start.elapsed());
+        let start = Instant::now();
+        let _ = json!({
+            "hello": String::from("thisIsAString"),
+            "struct": Test {
+                yes: String::new()
+            },
+            bad: hello
+        });
+        println!("{:?}", start.elapsed());
     }
 
     #[test]
