@@ -6,7 +6,8 @@ use quote::quote;
 use syn::{
     braced, bracketed, parse,
     parse::{Parse, ParseStream, Result as SynResult},
-    parse_macro_input, token, Expr, Ident, ItemEnum, ItemStruct, LitBool, LitStr, Member, Token,
+    parse_macro_input, Token, token, Expr, Ident, 
+    ItemEnum, ItemStruct, LitBool, LitStr, Member,
 };
 
 mod util {
@@ -21,7 +22,6 @@ enum JsonValue {
     Object(JsonObject),
     Array(JsonArray),
     String(LitStr),
-    Number(Expr),
     Bool(bool),
     Expr(Expr),
 }
@@ -79,10 +79,9 @@ impl Parse for JsonObject {
         {
             let mut map: Vec<(String, Span)> = Vec::new();
             for JsonKeyValue { key, key_span, .. } in pairs.iter() {
-                if let Some((_, span2)) = 
-                    map.iter().find(|(key2, _)| key2.clone() == key.clone()) 
-                {
-                    let mut d = Diagnostic::new(Level::Error, format!("duplicate key `{key}` in object"));
+                if let Some((_, span2)) = map.iter().find(|(key2, _)| key2.clone() == key.clone()) {
+                    let mut d =
+                        Diagnostic::new(Level::Error, format!("duplicate key `{key}` in object"));
                     d.set_spans(key_span.unwrap());
                     d = d.span_note(span2.unwrap(), "key first defined here");
                     d.emit();
@@ -138,22 +137,15 @@ impl JsonValue {
 impl Parse for JsonValue {
     fn parse(input: ParseStream) -> SynResult<Self> {
         if input.peek(LitStr) {
-            let s: LitStr = input.parse()?;
-            Ok(JsonValue::String(s))
+            Ok(JsonValue::String(input.parse()?))
         } else if input.peek(LitBool) {
             Ok(JsonValue::Bool(input.parse::<LitBool>()?.value))
-        } else if input.peek(Ident) || input.peek(syn::token::Paren) {
-            let expr: Expr = input.parse()?;
-            Ok(JsonValue::Expr(expr))
         } else if input.peek(token::Brace) {
-            let obj: JsonObject = input.parse()?;
-            Ok(JsonValue::Object(obj))
+            Ok(JsonValue::Object(input.parse()?))
         } else if input.peek(token::Bracket) {
-            let arr: JsonArray = input.parse()?;
-            Ok(JsonValue::Array(arr))
+            Ok(JsonValue::Array(input.parse()?))
         } else {
-            let expr: Expr = input.parse()?;
-            Ok(JsonValue::Number(expr))
+            Ok(JsonValue::Expr(input.parse()?))
         }
     }
 }
@@ -164,12 +156,7 @@ impl quote::ToTokens for JsonValue {
             JsonValue::Object(obj) => obj.to_tokens(tokens),
             JsonValue::Array(arr) => arr.to_tokens(tokens),
             JsonValue::String(litstr) => quote!(format!("\"{}\"", #litstr)).to_tokens(tokens),
-            JsonValue::Number(expr) => expr.to_tokens(tokens),
-            JsonValue::Bool(b) => {
-                let b = *b;
-                let token = quote!(#b);
-                token.to_tokens(tokens);
-            }
+            JsonValue::Bool(b) => (*b).to_tokens(tokens),
             JsonValue::Expr(expr) => {
                 quote!(json_proc::ToJson::to_json_string(&(#expr))).to_tokens(tokens);
             }

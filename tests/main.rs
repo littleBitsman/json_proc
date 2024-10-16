@@ -119,7 +119,7 @@ mod tests {
         assert_eq!(serde_json_str!(json_str), serde_json_str!(r#"{"user":{"name":"Jane Doe","age":25},"is_admin":false}"#));
     }
 
-    #[test]
+    #[allow(dead_code)]
     fn test_json_with_escape_characters() {
         let json_str = json!({
             "message": "This is a \"quoted\" word.",
