@@ -6,8 +6,9 @@ use quote::quote;
 use syn::{
     braced, bracketed, parse,
     parse::{Parse, ParseStream, Result as SynResult},
-    parse_macro_input, Token, token, Expr, Ident, 
-    ItemEnum, ItemStruct, LitBool, LitStr, Member,
+    parse_macro_input,
+    spanned::Spanned,
+    token, Expr, Ident, ItemEnum, ItemStruct, LitBool, LitStr, Member, Token,
 };
 
 mod util {
@@ -158,7 +159,7 @@ impl quote::ToTokens for JsonValue {
             JsonValue::String(litstr) => quote!(format!("\"{}\"", #litstr)).to_tokens(tokens),
             JsonValue::Bool(b) => (*b).to_tokens(tokens),
             JsonValue::Expr(expr) => {
-                quote!(json_proc::ToJson::to_json_string(&(#expr))).to_tokens(tokens);
+                quote!(::json_proc::ToJson::to_json_string(&(#expr))).to_tokens(tokens);
             }
         }
     }
@@ -209,7 +210,7 @@ impl quote::ToTokens for JsonArray {
 /// If you are looking for custom serialization traits, macros,
 /// and functions, use `serde_json` and `serde` instead.
 ///
-/// Examples:
+/// ## Examples:
 ///
 /// Serializing an object:
 /// ```no_run
@@ -243,13 +244,13 @@ impl quote::ToTokens for JsonArray {
 #[proc_macro]
 pub fn json(input: TokenStream) -> TokenStream {
     let json_value = parse_macro_input!(input as JsonValue);
-
+    
     quote!(#json_value).into()
 }
 
-/// Derive the ToJson trait for a struct.
+/// Derive the ToJson trait for a struct or enum.
 ///
-/// Examples:
+/// ## Example:
 ///
 /// ```no_run
 /// #[derive(ToJson)]
@@ -272,6 +273,17 @@ pub fn json_derive(item: TokenStream) -> TokenStream {
         let ident = input.ident;
         let mut members = input.fields.members().peekable();
         let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+        let type_generics = input.generics.type_params().map(|v| v.ident.clone());
+
+        let where_clause = where_clause.map_or(
+            quote! {
+                where
+                    #(
+                        #type_generics: ::json_proc::ToJson
+                    ),*
+            },
+            |v| quote!(#v),
+        );
 
         let fn_impl = if members
             .peek()
@@ -279,7 +291,7 @@ pub fn json_derive(item: TokenStream) -> TokenStream {
         {
             if util::iter_len(&members) == 1 {
                 // Generate an impl that uses the first (and only) element in the tuple.
-                quote!(json_proc::ToJson::to_json_string(&self.0))
+                quote!(::json_proc::ToJson::to_json_string(&self.0))
             } else {
                 // Generate an array-like impl.
                 quote! {
@@ -311,10 +323,21 @@ pub fn json_derive(item: TokenStream) -> TokenStream {
             }
         }
         .into()
-    } else if let Ok(input) = parse::<ItemEnum>(item) {
+    } else if let Ok(input) = parse::<ItemEnum>(item.clone()) {
         let ident = input.ident;
         let variants = input.variants.iter().peekable();
         let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+        let type_generics = input.generics.type_params().map(|v| v.ident.clone());
+
+        let where_clause = where_clause.map_or(
+            quote! {
+                where
+                    #(
+                        #type_generics: ::json_proc::ToJson
+                    ),*
+            },
+            |v| quote!(#v),
+        );
 
         let mut streams: Vec<TokenStream2> = Vec::new();
         for var in variants {
@@ -341,7 +364,7 @@ pub fn json_derive(item: TokenStream) -> TokenStream {
                     });
                     let members2 = members.clone();
                     quote!(Self::#varident( #(#members2),* ) => {
-                        let values: Vec<String> = vec![#(json_proc::ToJson::to_json_string(#members)),*];
+                        let values: Vec<String> = vec![#(::json_proc::ToJson::to_json_string(#members)),*];
 
                         format!("[{}]", values.into_iter().map(|val| format!("{val}")).collect::<Vec<String>>().join(","))
                     })
@@ -354,7 +377,7 @@ pub fn json_derive(item: TokenStream) -> TokenStream {
 
                     #({
                         let key = stringify!(#members);
-                        let value = json_proc::ToJson::to_json_string(#members);
+                        let value = ::json_proc::ToJson::to_json_string(#members);
                         pairs.push((key.to_string(), value));
                     })*
 
@@ -376,9 +399,11 @@ pub fn json_derive(item: TokenStream) -> TokenStream {
         }
         .into()
     } else {
-        quote!(compile_error!(
-            "expected struct or enum for deriving ToJson"
-        ))
+        syn::Error::new(
+            TokenStream2::from(item).span(),
+            "expected struct or enum for deriving ToJson",
+        )
+        .to_compile_error()
         .into()
     }
 }

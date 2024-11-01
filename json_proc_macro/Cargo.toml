@@ -15,7 +15,5 @@ quote = "1.0.37"
 syn = { version = "2.0.79", features = ["full"] }
 proc-macro2 = "1.0.86"
 
-json_proc_trait = { path = "../json_proc_trait", version = "0.3.0" }
-
 [lib]
 proc-macro = true

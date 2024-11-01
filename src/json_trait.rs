@@ -1,4 +1,4 @@
-//! This crate only provides the [`ToJson`] trait.
+//! This module only provides the [`ToJson`] trait.
 //!
 //! See the documentation of [`json_proc`] for more info.
 //!
