@@ -32,6 +32,7 @@ enum JsonValue {
     String(LitStr),
     Bool(bool),
     Expr(Expr),
+    Null
 }
 
 struct JsonKeyValue {
@@ -77,7 +78,7 @@ impl Parse for JsonObject {
         let mut pairs = Vec::new();
 
         while !content.is_empty() {
-            let pair: JsonKeyValue = content.parse()?;
+            let pair = content.parse()?;
             pairs.push(pair);
             if content.peek(Token![,]) {
                 content.parse::<Token![,]>()?;
@@ -100,8 +101,7 @@ impl Parse for JsonObject {
         }
 
         Ok(JsonObject {
-            pairs,
-            // span: input.span(),
+            pairs
         })
     }
 }
@@ -113,7 +113,7 @@ impl Parse for JsonArray {
         let mut elements = Vec::new();
 
         while !content.is_empty() {
-            let elem: JsonValue = content.parse()?;
+            let elem = content.parse()?;
             elements.push(elem);
             if content.peek(Token![,]) {
                 content.parse::<Token![,]>()?;
@@ -151,7 +151,13 @@ impl Parse for JsonValue {
         } else if input.peek(token::Brace) {
             Ok(JsonValue::Object(input.parse()?))
         } else if input.peek(token::Bracket) {
-            Ok(JsonValue::Array(input.parse()?))
+            Ok(JsonValue::Array(input.parse()?))            
+        } else if input.fork().parse::<Ident>()
+            .map(|v| v.to_string()) 
+            .is_ok_and(|v| v == "undefined" || v == "null")
+        {
+            input.parse::<Ident>()?;
+            Ok(JsonValue::Null)
         } else {
             Ok(JsonValue::Expr(input.parse()?))
         }
@@ -168,6 +174,7 @@ impl quote::ToTokens for JsonValue {
             JsonValue::Expr(expr) => {
                 quote!(::json_proc::ToJson::to_json_string(&(#expr))).to_tokens(tokens);
             }
+            JsonValue::Null => quote!("null").to_tokens(tokens),
         }
     }
 }

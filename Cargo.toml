@@ -1,11 +1,11 @@
-[workspace]
-package.authors = ["littleBitsman"]
-package.documentation = "https://docs.rs/json_proc"
-package.edition = "2021"
-package.license = "MIT"
-package.readme = true
-package.repository = "https://github.com/littleBitsman/json_proc"
-package.version = "0.4.1"
+[workspace.package]
+authors = ["littleBitsman"]
+documentation = "https://docs.rs/json_proc"
+edition = "2021"
+license = "MIT"
+readme = true
+repository = "https://github.com/littleBitsman/json_proc"
+version = "0.4.1"
 
 [package]
 name = "json_proc"
