@@ -3,9 +3,9 @@
 //!
 //! (Better docs coming soon)
 
-pub extern crate json_proc_macro;
+pub extern crate json_proc_macro as macros;
 
 mod json_trait;
 
-pub use json_proc_macro::*;
+pub use macros::*;
 pub use json_trait::ToJson;
