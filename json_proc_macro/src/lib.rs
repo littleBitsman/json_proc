@@ -14,6 +14,13 @@ use syn::{
 mod util {
     use std::iter::Iterator;
 
+    #[must_use]
+    #[inline]
+    // This exists the way it does for two reasons:
+    // 1. utility
+    // 2. proc macros are expanded during build
+    //    so as long as this isn't done at runtime
+    //    it's more or less OK
     pub fn iter_len<T, I: Iterator<Item = T> + Clone>(iter: &I) -> usize {
         iter.clone().count()
     }
@@ -176,10 +183,7 @@ impl quote::ToTokens for JsonObject {
             pairs_tokens.push(quote!(format!("\"{}\":{}", #key, #value)));
         }
         let output = quote! {
-            format!("{{{}}}", {
-                let vec: Vec<String> = vec![#(#pairs_tokens.to_string()),*];
-                vec
-            }.join(","))
+            format!("{{{}}}", (vec![#(#pairs_tokens.to_string()),*] as Vec<String>).join(","))
         };
         output.to_tokens(tokens);
     }
@@ -194,7 +198,7 @@ impl quote::ToTokens for JsonArray {
         }
         let output = quote!(format!(
             "[{}]",
-            vec![#(#elements_tokens.to_string()),*].join(",")
+            (vec![#(#elements_tokens),*] as Vec<String>).join(",")
         ));
         output.to_tokens(tokens);
     }
@@ -295,23 +299,21 @@ pub fn json_derive(item: TokenStream) -> TokenStream {
             } else {
                 // Generate an array-like impl.
                 quote! {
-                    let values: Vec<String> = vec![#(json_proc::ToJson::to_json_string(&self.#members)),*];
-
-                    format!("[{}]", values.into_iter().map(|val| format!("{val}")).collect::<Vec<String>>().join(","))
+                    format!("[{}]", (vec![#(::json_proc::ToJson::to_json_string(&self.#members)),*] as Vec<String>).join(","))
                 }
             }
         } else {
             // Generate an object-like impl.
             quote! {
-                let mut pairs: Vec<(String, String)> = Vec::new();
+                let mut pairs: Vec<String> = Vec::new();
 
                 #({
                     let key = stringify!(#members);
-                    let value = json_proc::ToJson::to_json_string(&self.#members);
-                    pairs.push((key.to_string(), value));
+                    let value = ::json_proc::ToJson::to_json_string(&self.#members);
+                    pairs.push(format!("\"{key}\": {value}"));
                 })*
 
-                format!("{{{}}}", pairs.into_iter().map(|(key, val)| format!("\"{key}\":{val}")).collect::<Vec<String>>().join(","))
+                format!("{{{}}}", pairs.join(","))
             }
         };
 
@@ -353,7 +355,7 @@ pub fn json_derive(item: TokenStream) -> TokenStream {
             {
                 if iter_len == 1 {
                     // Generate an impl that uses the first (and only) element in the tuple.
-                    quote!(Self::#varident(a) => json_proc::ToJson::to_json_string(a))
+                    quote!(Self::#varident(a) => ::json_proc::ToJson::to_json_string(a))
                 } else {
                     // Generate an array-like impl.
                     let members = members.map(|v| match v {
@@ -364,9 +366,7 @@ pub fn json_derive(item: TokenStream) -> TokenStream {
                     });
                     let members2 = members.clone();
                     quote!(Self::#varident( #(#members2),* ) => {
-                        let values: Vec<String> = vec![#(::json_proc::ToJson::to_json_string(#members)),*];
-
-                        format!("[{}]", values.into_iter().map(|val| format!("{val}")).collect::<Vec<String>>().join(","))
+                        format!("[{}]", (vec![#(::json_proc::ToJson::to_json_string(#members)),*] as Vec<String>).join(","))
                     })
                 }
             } else {

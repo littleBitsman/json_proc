@@ -83,6 +83,7 @@ mod tests {
 
     #[cfg_attr(test, test)]
     pub fn test() {
+        println!("{}", json!({}));
         let value = String::from("ga");
         let other_value = 1f32 / 32f32;
 
