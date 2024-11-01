@@ -248,7 +248,7 @@ impl quote::ToTokens for JsonArray {
 #[proc_macro]
 pub fn json(input: TokenStream) -> TokenStream {
     let json_value = parse_macro_input!(input as JsonValue);
-    
+
     quote!(#json_value).into()
 }
 
@@ -307,11 +307,9 @@ pub fn json_derive(item: TokenStream) -> TokenStream {
             quote! {
                 let mut pairs: Vec<String> = Vec::new();
 
-                #({
-                    let key = stringify!(#members);
-                    let value = ::json_proc::ToJson::to_json_string(&self.#members);
-                    pairs.push(format!("\"{key}\": {value}"));
-                })*
+                #(
+                    pairs.push(format!("\"{key}\": {value}", key = stringify!(#members), value = ::json_proc::ToJson::to_json_string(&self.#members)));
+                )*
 
                 format!("{{{}}}", pairs.join(","))
             }
@@ -373,15 +371,13 @@ pub fn json_derive(item: TokenStream) -> TokenStream {
                 // Generate an object-like impl.
                 let members2 = members.clone();
                 quote!(Self::#varident { #(#members2),* } => {
-                    let mut pairs: Vec<(String, String)> = Vec::new();
+                    let mut pairs: Vec<String> = Vec::new();
 
-                    #({
-                        let key = stringify!(#members);
-                        let value = ::json_proc::ToJson::to_json_string(#members);
-                        pairs.push((key.to_string(), value));
-                    })*
+                    #(
+                        pairs.push(format!("\"{key}\": {value}", key = stringify!(#members), value = ::json_proc::ToJson::to_json_string(#members)));
+                    )*
 
-                    format!("{{{}}}", pairs.into_iter().map(|(key, val)| format!("\"{key}\":{val}")).collect::<Vec<String>>().join(","))
+                    format!("{{{}}}", pairs.join(","))
                 })
             };
 

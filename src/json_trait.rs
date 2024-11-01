@@ -16,6 +16,7 @@ pub trait ToJson {
     /// Converts self to a JSON string.
     ///
     /// Implementations of this should not fail.
+    #[must_use = "converting to a JSON string is often expensive and is not expected to have side effects"]
     fn to_json_string(&self) -> String;
 }
 
