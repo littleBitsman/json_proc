@@ -9,9 +9,9 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
 /// Trait that converts a type to a JSON string.
 ///
-/// [`json_proc`] provides a macro that derives this trait.
+/// This trait has a [derive macro].
 /// 
-/// [`json_proc`]: https://docs.rs/json_proc/latest/json_proc
+/// [derive macro]: https://docs.rs/json_proc/latest/json_proc/derive.ToJson.html
 pub trait ToJson {
     /// Converts self to a JSON string.
     ///

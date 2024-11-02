@@ -30,8 +30,33 @@ mod tests {
     #[cfg(test)]
     macro_rules! serde_json_str {
         ($($json:tt)+) => {
-            serde_json::to_string(&serde_json::json!($($json)+)).unwrap()
+            ::serde_json::to_string(&::serde_json::json!($($json)+)).unwrap()
         };
+    }
+
+    #[cfg(test)]
+    fn json_like_serde<S: ToString>(s: S) -> String {
+        serde_json::from_str::<serde_json::Value>(&s.to_string()).unwrap().to_string()
+    }
+
+    #[cfg(test)]
+    macro_rules! check_tt {
+        ($($tt:tt)+) => {{
+            let lhs = json_like_serde(::json_proc::json!($($tt)+));
+            let rhs = serde_json_str!($($tt)+);
+            if cfg!(debug_assertions) {
+                println!("LHS: {lhs}");
+                println!("RHS: {rhs}");
+            }
+            assert_eq!(lhs, rhs);
+        }};
+    }
+
+    #[test]
+    pub fn thingy() {
+        check_tt!({
+            "hlelo": "hi"
+        })
     }
 
     #[cfg_attr(test, test)]
@@ -69,7 +94,8 @@ mod tests {
                     Test2::Hello { hello: String::from("this is Hello") },
                     Test2::Two(String::from("this is 2"), 2),
                 ],
-                array: Tuple(Test2::Hello { hello: String::from("this is some nested stuff") }, 0, String::from("directly in tuple"))
+                array: Tuple(Test2::Hello { hello: String::from("this is some nested stuff") }, 0, String::from("directly in tuple")),
+                "a_null": null
             })
         );
 
@@ -85,7 +111,8 @@ mod tests {
             "struct": {
                 "yes": String::new()
             },
-            hello.clone(): hello
+            hello.clone(): hello,
+            "null": null
         });
         println!("{:?}", start.elapsed());
         let start = Instant::now();
@@ -95,75 +122,58 @@ mod tests {
                 yes: String::new(),
                 test: usize::MAX
             },
-            bad: hello
+            bad: hello,
+            null: null
         });
         println!("{:?}", start.elapsed());
     }
 
     #[test]
     fn test_basic_key_value_pairs() {
-        let json_str = json!({
+        check_tt!({
             "name": "John Doe",
             "age": 30,
             "active": true
-        });
-        assert_eq!(
-            serde_json_str!(json_str),
-            serde_json_str!(r#"{"name":"John Doe","age":30,"active":true}"#)
-        );
+        })
     }
 
     #[test]
     fn test_string_from() {
-        let json_str = json!({
+        check_tt!({
             "greeting": String::from("Hello, world!"),
-        });
-        assert_eq!(
-            serde_json_str!(json_str),
-            serde_json_str!(r#"{"greeting":"Hello, world!"}"#)
-        );
+        })
     }
 
     #[test]
     fn test_nested_json() {
-        let json_str = json!({
+        check_tt!({
             "user": {
                 "name": "Jane Doe",
                 "age": 25,
             },
             "is_admin": false,
-        });
-        assert_eq!(
-            serde_json_str!(json_str),
-            serde_json_str!(r#"{"user":{"name":"Jane Doe","age":25},"is_admin":false}"#)
-        );
+        })
     }
 
     #[allow(dead_code)]
     fn test_json_with_escape_characters() {
-        let json_str = json!({
+        check_tt!({
             "message": "This is a \"quoted\" word.",
             "newline": "First line.\nSecond line.",
         });
-        assert_eq!(serde_json_str!(json_str), serde_json_str!("{\"message\":\"This is a \\\"quoted\\\" word.\",\"newline\":\"First line.\\nSecond line.\"}"));
     }
 
     #[test]
     fn test_empty_json() {
-        let json_str = json!({});
-        assert_eq!(serde_json_str!(json_str), serde_json_str!(r#"{}"#));
+        check_tt!({});
     }
 
     #[test]
     fn test_complex_expressions() {
         let number = 42;
-        let json_str = json!({
+        check_tt!({
             "answer": number,
             "text": String::from("The answer is"),
-        });
-        assert_eq!(
-            serde_json_str!(json_str),
-            serde_json_str!(r#"{"answer":42,"text":"The answer is"}"#)
-        );
+        })
     }
 }
