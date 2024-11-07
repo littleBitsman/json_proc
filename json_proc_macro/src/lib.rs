@@ -88,7 +88,7 @@ impl Parse for JsonObject {
         {
             let mut map: Vec<(String, Span)> = Vec::new();
             for JsonKeyValue { key, key_span, .. } in pairs.iter() {
-                if let Some((_, span2)) = map.iter().find(|(key2, _)| key2.clone() == key.clone()) {
+                if let Some((_, span2)) = map.iter().find(|(key2, _)| *key2 == *key) {
                     let mut d =
                         Diagnostic::new(Level::Error, format!("duplicate key `{key}` in object"));
                     d.set_spans(key_span.unwrap());

@@ -97,7 +97,7 @@ impl<T: ToJson> ToJson for &[T] {
         format!(
             "[{}]",
             self.iter()
-                .map(|v| v.to_json_string())
+                .map(ToJson::to_json_string)
                 .collect::<Vec<String>>()
                 .join(",")
         )
@@ -153,7 +153,7 @@ impl<T: ToJson> ToJson for BTreeSet<T> {
         format!(
             "[{}]",
             self.iter()
-                .map(|v| v.to_json_string())
+                .map(ToJson::to_json_string)
                 .collect::<Vec<String>>()
                 .join(",")
         )
@@ -165,7 +165,7 @@ impl<T: ToJson> ToJson for HashSet<T> {
         format!(
             "[{}]",
             self.iter()
-                .map(|v| v.to_json_string())
+                .map(ToJson::to_json_string)
                 .collect::<Vec<String>>()
                 .join(",")
         )
@@ -177,7 +177,7 @@ impl<T: ToJson> ToJson for VecDeque<T> {
         format!(
             "[{}]",
             self.iter()
-                .map(|v| v.to_json_string())
+                .map(ToJson::to_json_string)
                 .collect::<Vec<String>>()
                 .join(",")
         )
