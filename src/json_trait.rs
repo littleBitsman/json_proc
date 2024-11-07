@@ -10,7 +10,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 /// Trait that converts a type to a JSON string.
 ///
 /// This trait has a [derive macro].
-/// 
+///
 /// [derive macro]: https://docs.rs/json_proc/latest/json_proc/derive.ToJson.html
 pub trait ToJson {
     /// Converts self to a JSON string.
@@ -43,22 +43,37 @@ display_json_impl! {
 // FIXME: this doesn't correctly handle newlines
 // and other escaped characters
 // (AFAIK its only '\n')
-macro_rules! string_json_impl {
-    { $($ty:ty $(,)?)* } => {
-        $(
-            impl ToJson for $ty {
-                #[inline]
-                fn to_json_string(&self) -> String {
-                    format!(r#""{}""#, self.to_string().replace('"', "\\\""))
-                }
-            }
-        )*
-    };
+impl ToJson for String {
+    fn to_json_string(&self) -> String {
+        let mut json = String::with_capacity(self.len() + 2);
+        json.push('"');
+        json.push_str(self);
+        json.push('"');
+
+        json
+    }
 }
 
-string_json_impl! {
-    String
-    &str char
+impl ToJson for str {
+    fn to_json_string(&self) -> String {
+        let mut json = String::with_capacity(self.len() + 2);
+        json.push('"');
+        json.push_str(self);
+        json.push('"');
+
+        json
+    }
+}
+
+impl ToJson for char {
+    fn to_json_string(&self) -> String {
+        let mut json = String::with_capacity(3);
+        json.push('"');
+        json.push(*self);
+        json.push('"');
+
+        json
+    }
 }
 
 impl<T: ToJson> ToJson for Option<T> {

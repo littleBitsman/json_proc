@@ -7,7 +7,8 @@ fn main() {
     export_var("PROFILE", &env::var("PROFILE").unwrap());
     // By default Cargo only runs the build script when a file changes.
     // This makes it re-run on target change
-    println!("cargo:rerun-if-changed-env=PROFILE")
+    println!(r#"cargo::rustc-check-cfg=cfg(profile, values("dev","release"))"#);
+    println!(r#"cargo::rustc-cfg=profile="{}""#, env::var("PROFILE").unwrap());
 }
 
 /// this is stolen from some git repo
