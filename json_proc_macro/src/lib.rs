@@ -2,7 +2,7 @@
 
 use proc_macro::{Diagnostic, Level, TokenStream};
 use proc_macro2::{Span, TokenStream as TokenStream2};
-use quote::quote;
+use quote::{quote, ToTokens};
 use syn::{
     braced, bracketed, parse,
     parse::{Parse, ParseStream, Result as SynResult},
@@ -164,7 +164,7 @@ impl Parse for JsonValue {
     }
 }
 
-impl quote::ToTokens for JsonValue {
+impl ToTokens for JsonValue {
     fn to_tokens(&self, tokens: &mut TokenStream2) {
         match self {
             JsonValue::Object(obj) => obj.to_tokens(tokens),
@@ -180,7 +180,7 @@ impl quote::ToTokens for JsonValue {
 }
 
 // Implementing quote for JsonObject to generate valid Rust code
-impl quote::ToTokens for JsonObject {
+impl ToTokens for JsonObject {
     fn to_tokens(&self, tokens: &mut TokenStream2) {
         let pairs = &self.pairs;
         let mut pairs_tokens = Vec::new();
@@ -196,7 +196,7 @@ impl quote::ToTokens for JsonObject {
     }
 }
 
-impl quote::ToTokens for JsonArray {
+impl ToTokens for JsonArray {
     fn to_tokens(&self, tokens: &mut TokenStream2) {
         let elements = &self.elements;
         let mut elements_tokens = Vec::new();
