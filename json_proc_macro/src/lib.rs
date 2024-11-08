@@ -9,6 +9,7 @@ use syn::{
     parse_macro_input,
     spanned::Spanned,
     token, Expr, Ident, ItemEnum, ItemStruct, LitBool, LitStr, Member, Token,
+    Error as SynError
 };
 
 mod util {
@@ -281,13 +282,13 @@ pub fn json(input: TokenStream) -> TokenStream {
 // TODO: add enum support
 pub fn json_derive(item: TokenStream) -> TokenStream {
     if let Ok(input) = parse::<ItemStruct>(item.clone()) {
-        let ident = input.ident;
+        let ident = &input.ident;
         let mut members = input.fields.members().peekable();
         let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
         let type_generics = input.generics.type_params().map(|v| v.ident.clone());
 
-        let where_clause = where_clause.map_or(
-            quote! {
+        let where_clause = where_clause.map_or_else(
+            || quote! {
                 where
                     #(
                         #type_generics: ::json_proc::ToJson
@@ -309,7 +310,7 @@ pub fn json_derive(item: TokenStream) -> TokenStream {
                     format!("[{}]", (vec![#(::json_proc::ToJson::to_json_string(&self.#members)),*] as Vec<String>).join(","))
                 }
             }
-        } else {
+        } else if members.peek().is_some() {
             // Generate an object-like impl.
             quote! {
                 let mut pairs: Vec<String> = Vec::new();
@@ -320,8 +321,9 @@ pub fn json_derive(item: TokenStream) -> TokenStream {
 
                 format!("{{{}}}", pairs.join(","))
             }
+        } else {
+            quote!(stringify!(#ident).to_string())
         };
-
         quote! {
             impl #impl_generics ToJson for #ident #ty_generics #where_clause {
                 fn to_json_string(&self) -> String {
@@ -336,8 +338,8 @@ pub fn json_derive(item: TokenStream) -> TokenStream {
         let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
         let type_generics = input.generics.type_params().map(|v| v.ident.clone());
 
-        let where_clause = where_clause.map_or(
-            quote! {
+        let where_clause = where_clause.map_or_else(
+            || quote! {
                 where
                     #(
                         #type_generics: ::json_proc::ToJson
@@ -352,7 +354,7 @@ pub fn json_derive(item: TokenStream) -> TokenStream {
             let varident = &var.ident;
             let mut members = var.fields.members().peekable();
             let iter_len = util::iter_len(&members);
-            let str = if iter_len == 0 {
+            let this_impl = if iter_len == 0 {
                 quote!(Self::#varident => stringify!(#ident).to_string())
             } else if members
                 .peek()
@@ -388,7 +390,7 @@ pub fn json_derive(item: TokenStream) -> TokenStream {
                 })
             };
 
-            streams.push(str)
+            streams.push(this_impl)
         }
 
         quote! {
@@ -402,11 +404,11 @@ pub fn json_derive(item: TokenStream) -> TokenStream {
         }
         .into()
     } else {
-        syn::Error::new(
+        SynError::new(
             TokenStream2::from(item).span(),
             "expected struct or enum for deriving ToJson",
         )
-        .to_compile_error()
+        .into_compile_error()
         .into()
     }
 }
