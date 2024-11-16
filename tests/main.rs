@@ -70,34 +70,36 @@ mod tests {
             test: u32::MAX,
         };
         
-        println!(
-            "{}",
-            json!({
-                "hello": (2 + 4) as f32 + other_value + (b'e' as f32) + ting(100.0),
-                "e": String::from("hello"),
-                "test": None::<()>,
-                "not": "trueStr",
-                "embedded_array": [
-                    1,2,
-                    5
-                    ,10,
-                    {
-                        "heck": true
-                    }
+        let start = Instant::now();
+        let finished = json!({
+            "hello": (2 + 4) as f32 + other_value + (b'e' as f32) + ting(100.0),
+            "e": String::from("hello"),
+            "test": None::<()>,
+            "not": "trueStr",
+            "embedded_array": [
+                1,2,
+                5
+                ,10,
+                {
+                    "heck": true
+                }
 
-                ]
-                ,
-                e2: false,
-                es2: format!("hello: {} {hello}", "world!", hello = value),
-                test22: strc,
-                test2Enum: [
-                    Test2::Hello { hello: String::from("this is Hello") },
-                    Test2::Two(String::from("this is 2"), 2),
-                ],
-                array: Tuple(Test2::Hello { hello: String::from("this is some nested stuff") }, 0, String::from("directly in tuple")),
-                "a_null": null
-            })
-        );
+            ]
+            ,
+            "e2": false,
+            "fake": format!("Can I see the syntax highlights pls {}", false),
+            "es2": format!("hello: {} {hello}", "world!", hello = value),
+            "test22": strc,
+            "test2Enum": [
+                Test2::Hello { hello: String::from("this is Hello") },
+                Test2::Two(String::from("this is 2"), 2),
+            ],
+            "array": Tuple(Test2::Hello { hello: String::from("this is some nested stuff") }, 0, String::from("directly in tuple")),
+            "a_null": null,
+            value: value
+        });
+        let dur = start.elapsed();
+        println!("{finished}\nTook: {dur:?}");
 
         // println!("{}", core::any::type_name_of_val(&None::<String>));
     }
@@ -122,8 +124,8 @@ mod tests {
                 yes: String::new(),
                 test: usize::MAX
             },
-            bad: hello,
-            null: null
+            "bad": hello,
+            "null": null
         });
         println!("{:?}", start.elapsed());
     }

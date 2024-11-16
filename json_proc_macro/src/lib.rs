@@ -5,18 +5,18 @@ use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::{quote, ToTokens};
 use syn::{
     braced, bracketed, parse,
-    parse::{Parse, ParseStream, Result as SynResult},
+    parse::{Parse, ParseStream},
     parse_macro_input,
     spanned::Spanned,
     token, Expr, Ident, ItemEnum, ItemStruct, LitBool, LitStr, Member, Token,
-    Error as SynError
+    Error as SynError, Result as SynResult
 };
 
 mod util {
     use std::iter::Iterator;
 
     #[must_use]
-    #[inline]
+    #[inline(always)]
     // This exists the way it does for two reasons:
     // 1. utility
     // 2. proc macros are expanded during build
@@ -24,6 +24,16 @@ mod util {
     //    it's more or less OK
     pub fn iter_len<T, I: Iterator<Item = T> + Clone>(iter: &I) -> usize {
         iter.clone().count()
+    }
+
+    /// Call [`Result::unwrap_unchecked`] on `res`.
+    /// 
+    /// This is not marked as `unsafe` to avoid `unsafe`
+    /// blocks being sprinkled everywhere, but there are still
+    /// safety concerns. This mainly is done for efficiency.
+    #[inline(always)]
+    pub fn unwrap_unchecked<T, E>(res: Result<T, E>) -> T {
+        unsafe { res.unwrap_unchecked() }
     }
 }
 
@@ -36,8 +46,23 @@ enum JsonValue {
     Null
 }
 
+#[derive(Clone)]
+enum JsonKey {
+    Expr(Expr),
+    Lit(String),
+}
+
+impl PartialEq for JsonKey {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Lit(s1), Self::Lit(s2)) => *s1 == *s2,
+            _ => false
+        }
+    }
+}
+
 struct JsonKeyValue {
-    key: String,
+    key: JsonKey,
     value: JsonValue,
     key_span: Span,
 }
@@ -52,21 +77,18 @@ struct JsonArray {
 
 impl Parse for JsonKeyValue {
     fn parse(input: ParseStream) -> SynResult<Self> {
-        // Parse the key as a string
-        let (key, span) = if input.peek(Ident) {
-            let ident = input.parse::<Ident>()?;
-            (ident.to_string(), ident.span())
+        let (key, span) = if input.peek(LitStr) {
+            let item = input.parse::<LitStr>()?;
+            (JsonKey::Lit(item.value()), item.span())
         } else {
-            let litstr = input.parse::<LitStr>()?;
-            (litstr.value(), litstr.span())
+            let item = input.parse::<Expr>()?;
+            (JsonKey::Expr(item.clone()), item.span())
         };
         input.parse::<Token![:]>()?;
 
-        // Parse the value (could be any JsonValue)
-        let value: JsonValue = input.parse()?;
         Ok(JsonKeyValue {
             key,
-            value,
+            value: input.parse()?,
             key_span: span,
         })
     }
@@ -82,14 +104,14 @@ impl Parse for JsonObject {
             let pair = content.parse()?;
             pairs.push(pair);
             if content.peek(Token![,]) {
-                content.parse::<Token![,]>()?;
+                util::unwrap_unchecked(content.parse::<Token![,]>());
             }
         }
 
         {
-            let mut map: Vec<(String, Span)> = Vec::new();
+            let mut map: Vec<(JsonKey, Span)> = Vec::new();
             for JsonKeyValue { key, key_span, .. } in pairs.iter() {
-                if let Some((_, span2)) = map.iter().find(|(key2, _)| *key2 == *key) {
+                if let Some((JsonKey::Lit(key), span2)) = map.iter().find(|(key2, _)| *key2 == *key) {
                     let mut d =
                         Diagnostic::new(Level::Error, format!("duplicate key `{key}` in object"));
                     d.set_spans(key_span.unwrap());
@@ -176,6 +198,15 @@ impl ToTokens for JsonValue {
                 quote!(::json_proc::ToJson::to_json_string(&(#expr))).to_tokens(tokens);
             }
             JsonValue::Null => quote!("null").to_tokens(tokens),
+        }
+    }
+}
+
+impl ToTokens for JsonKey {
+    fn to_tokens(&self, tokens: &mut TokenStream2) {
+        match self {
+            Self::Lit(str) => quote!(#str).to_tokens(tokens),
+            Self::Expr(expr) => expr.to_tokens(tokens),
         }
     }
 }
