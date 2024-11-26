@@ -18,5 +18,9 @@ quote = "1.0.37"
 syn = { version = "2.0.79", features = ["full"] }
 proc-macro2 = "1.0.86"
 
+[build-dependencies]
+# autocfg = "1.4.0"
+rustc_version = "0.4.1"
+
 [lib]
 proc-macro = true

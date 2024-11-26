@@ -4,9 +4,9 @@
 //! If you are looking for custom serialization traits, macros,
 //! and functions, use `serde_json` and `serde` instead.
 
-pub extern crate json_proc_macro as macros;
+extern crate json_proc_macro;
 
 mod json_trait;
 
+pub use json_proc_macro::*;
 pub use json_trait::ToJson;
-pub use macros::*;

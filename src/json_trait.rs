@@ -1,11 +1,11 @@
-//! This module only provides the [`ToJson`] trait.
+//! This module only provides the [`ToJson`][ToJson] trait.
 //!
 //! See the documentation of [`json_proc`] for more info.
 //!
-//! [`ToJson`]: crate::ToJson
+//! [ToJson]: crate::ToJson
 //! [`json_proc`]: https://docs.rs/json_proc/latest/json_proc
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
+use std::{collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque}, hash::BuildHasher};
 
 /// Trait that converts a type to a JSON string.
 ///
@@ -143,10 +143,11 @@ where
     }
 }
 
-impl<K, V> ToJson for HashMap<K, V>
+impl<K, V, S> ToJson for HashMap<K, V, S>
 where
     K: ToString,
     V: ToJson,
+    S: BuildHasher
 {
     fn to_json_string(&self) -> String {
         format!(
@@ -171,7 +172,7 @@ impl<T: ToJson> ToJson for BTreeSet<T> {
     }
 }
 
-impl<T: ToJson> ToJson for HashSet<T> {
+impl<T: ToJson, S: BuildHasher> ToJson for HashSet<T, S> {
     fn to_json_string(&self) -> String {
         format!(
             "[{}]",

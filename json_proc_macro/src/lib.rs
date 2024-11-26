@@ -1,6 +1,8 @@
-#![feature(proc_macro_diagnostic)]
+#![cfg_attr(compiler = "nightly", feature(proc_macro_diagnostic))]
 
-use proc_macro::{Diagnostic, Level, TokenStream};
+use proc_macro::TokenStream;
+#[cfg(compiler = "nightly")]
+use proc_macro::{Diagnostic, Level};
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::{quote, ToTokens};
 use syn::{
@@ -8,8 +10,8 @@ use syn::{
     parse::{Parse, ParseStream},
     parse_macro_input,
     spanned::Spanned,
-    token, Expr, Ident, ItemEnum, ItemStruct, LitBool, LitStr, Member, Token,
-    Error as SynError, Result as SynResult
+    token, Error as SynError, Expr, Ident, ItemEnum, ItemStruct, LitBool, LitStr, Member,
+    Result as SynResult, Token,
 };
 
 mod util {
@@ -25,16 +27,6 @@ mod util {
     pub fn iter_len<T, I: Iterator<Item = T> + Clone>(iter: &I) -> usize {
         iter.clone().count()
     }
-
-    /// Call [`Result::unwrap_unchecked`] on `res`.
-    /// 
-    /// This is not marked as `unsafe` to avoid `unsafe`
-    /// blocks being sprinkled everywhere, but there are still
-    /// safety concerns. This mainly is done for efficiency.
-    #[inline(always)]
-    pub fn unwrap_unchecked<T, E>(res: Result<T, E>) -> T {
-        unsafe { res.unwrap_unchecked() }
-    }
 }
 
 enum JsonValue {
@@ -43,7 +35,7 @@ enum JsonValue {
     String(LitStr),
     Bool(bool),
     Expr(Expr),
-    Null
+    Null,
 }
 
 #[derive(Clone)]
@@ -56,7 +48,7 @@ impl PartialEq for JsonKey {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Lit(s1), Self::Lit(s2)) => *s1 == *s2,
-            _ => false
+            _ => false,
         }
     }
 }
@@ -106,29 +98,35 @@ impl Parse for JsonObject {
         while !content.is_empty() {
             let pair = content.parse()?;
             pairs.push(pair);
-            if content.peek(Token![,]) {
-                util::unwrap_unchecked(content.parse::<Token![,]>());
-            }
+            let _ = content.parse::<Token![,]>();
         }
 
         {
             let mut map: Vec<(JsonKey, Span)> = Vec::new();
-            for JsonKeyValue { key, key_span, .. } in pairs.iter() {
-                if let Some((JsonKey::Lit(key), span2)) = map.iter().find(|(key2, _)| *key2 == *key) {
-                    let mut d =
-                        Diagnostic::new(Level::Error, format!("duplicate key `{key}` in object"));
-                    d.set_spans(key_span.unwrap());
-                    d = d.span_note(span2.unwrap(), "key first defined here");
-                    d.emit();
-                } else {
-                    map.push((key.clone(), *key_span));
+            for JsonKeyValue { key, key_span, .. } in &pairs {
+                #[cfg(compiler = "nightly")]
+                if let Some((key, span2)) = map.iter().find(|(key2, _)| *key2 == *key) {
+                    Diagnostic::spanned(
+                        key_span.unwrap(),
+                        Level::Error,
+                        format!(
+                            "duplicate key {} in object",
+                            match key {
+                                JsonKey::Lit(str) => str.clone(),
+                                JsonKey::Expr(expr) => format!("expression `{}`", quote!(#expr)),
+                            }
+                        ),
+                    )
+                    .help("remove this repeated key")
+                    .span_note(span2.unwrap(), "key first defined here")
+                    .emit();
+                    continue;
                 }
+                map.push((key.clone(), *key_span));
             }
         }
 
-        Ok(JsonObject {
-            pairs
-        })
+        Ok(JsonObject { pairs })
     }
 }
 
@@ -177,9 +175,11 @@ impl Parse for JsonValue {
         } else if input.peek(token::Brace) {
             Ok(JsonValue::Object(input.parse()?))
         } else if input.peek(token::Bracket) {
-            Ok(JsonValue::Array(input.parse()?))            
-        } else if input.fork().parse::<Ident>()
-            .map(|v| v.to_string()) 
+            Ok(JsonValue::Array(input.parse()?))
+        } else if input
+            .fork()
+            .parse::<Ident>()
+            .map(|v| v.to_string())
             .is_ok_and(|v| v == "undefined" || v == "null")
         {
             input.parse::<Ident>()?;
@@ -249,9 +249,8 @@ impl ToTokens for JsonArray {
 /// Lints and properly formats a JSON object, array, or value.
 ///
 /// This proc-macro supports:
-/// - all literals (integers, floats, [`&str`])
-/// - [`String`]
-/// - any expression that evaluates to a [`impl Display`]
+/// - all literals (integers, floats, [`&str`][strlit], [`char`])
+/// - any expression that evaluates to a [`impl ToJson`][ToJson]
 ///
 /// If you are looking for custom serialization traits, macros,
 /// and functions, use `serde_json` and `serde` instead.
@@ -284,9 +283,8 @@ impl ToTokens for JsonArray {
 /// }
 /// ```
 ///
-/// [`&str`]: str
-/// [`String`]: std::string::String
-/// [`impl Display`]: std::fmt::Display
+/// [strlit]: str
+/// [ToJson]: https://docs.rs/json_proc/latest/json_proc/trait.ToJson.html
 #[proc_macro]
 pub fn json(input: TokenStream) -> TokenStream {
     let json_value = parse_macro_input!(input as JsonValue);
@@ -322,11 +320,13 @@ pub fn json_derive(item: TokenStream) -> TokenStream {
         let type_generics = input.generics.type_params().map(|v| v.ident.clone());
 
         let where_clause = where_clause.map_or_else(
-            || quote! {
-                where
-                    #(
-                        #type_generics: ::json_proc::ToJson
-                    ),*
+            || {
+                quote! {
+                    where
+                        #(
+                            #type_generics: ::json_proc::ToJson
+                        ),*
+                }
             },
             |v| quote!(#v),
         );
@@ -373,11 +373,13 @@ pub fn json_derive(item: TokenStream) -> TokenStream {
         let type_generics = input.generics.type_params().map(|v| v.ident.clone());
 
         let where_clause = where_clause.map_or_else(
-            || quote! {
-                where
-                    #(
-                        #type_generics: ::json_proc::ToJson
-                    ),*
+            || {
+                quote! {
+                    where
+                        #(
+                            #type_generics: ::json_proc::ToJson
+                        ),*
+                }
             },
             |v| quote!(#v),
         );
@@ -403,7 +405,7 @@ pub fn json_derive(item: TokenStream) -> TokenStream {
                         Member::Unnamed(i) => {
                             Ident::new(format!("arg{}", i.index).as_str(), i.span)
                         }
-                        _ => unreachable!(),
+                        Member::Named(_) => unreachable!(),
                     });
                     let members2 = members.clone();
                     quote!(Self::#varident( #(#members2),* ) => {
