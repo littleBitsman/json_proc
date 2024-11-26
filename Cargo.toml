@@ -5,7 +5,7 @@ edition = "2021"
 license = "MIT"
 readme = true
 repository = "https://github.com/littleBitsman/json_proc"
-version = "0.4.3"
+version = "0.4.4"
 
 [package]
 name = "json_proc"
@@ -23,7 +23,7 @@ version.workspace = true
 exprs-as-keys = ["json_proc_macro/exprs-as-keys"]
 
 [dependencies]
-json_proc_macro = { path = "./json_proc_macro", version = "0.4.3" }
+json_proc_macro = { path = "./json_proc_macro", version = "0.4.4" }
 
 [dev-dependencies]
 json_proc_macro = { path = "./json_proc_macro", version = "*", features = ["exprs-as-keys"] }
