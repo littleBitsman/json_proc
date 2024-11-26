@@ -43,7 +43,7 @@ display_json_impl! {
 // FIXME: this doesn't correctly handle newlines
 // and other escaped characters
 // (AFAIK its only '\n')
-impl ToJson for String {
+impl ToJson for str {
     fn to_json_string(&self) -> String {
         let mut json = String::with_capacity(self.len() + 2);
         json.push('"');
@@ -54,14 +54,10 @@ impl ToJson for String {
     }
 }
 
-impl ToJson for str {
+impl ToJson for String {
+    #[inline]
     fn to_json_string(&self) -> String {
-        let mut json = String::with_capacity(self.len() + 2);
-        json.push('"');
-        json.push_str(self);
-        json.push('"');
-
-        json
+        self.as_str().to_json_string()
     }
 }
 

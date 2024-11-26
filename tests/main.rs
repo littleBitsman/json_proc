@@ -7,7 +7,7 @@ fn main() {
 }
 
 mod tests {
-    use std::time::Instant;
+    use std::{hint::black_box, time::Instant};
 
     use super::*;
     use json_proc::*;
@@ -108,25 +108,26 @@ mod tests {
     fn bench() {
         let hello = String::from("bad");
         let start = Instant::now();
-        serde_json_str!({
+        black_box(serde_json_str!({
             "hello": String::from("thisIsAString"),
             "struct": {
                 "yes": String::new()
             },
             hello.clone(): hello,
             "null": null
-        });
+        }));
         println!("{:?}", start.elapsed());
         let start = Instant::now();
-        let _ = json!({
+        black_box(json!({
             "hello": String::from("thisIsAString"),
             "struct": Test {
                 yes: String::new(),
                 test: usize::MAX
             },
             "bad": hello,
-            "null": null
-        });
+            "null": null,
+            hello: "hi"
+        }));
         println!("{:?}", start.elapsed());
     }
 

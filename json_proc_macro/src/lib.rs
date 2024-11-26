@@ -80,9 +80,12 @@ impl Parse for JsonKeyValue {
         let (key, span) = if input.peek(LitStr) {
             let item = input.parse::<LitStr>()?;
             (JsonKey::Lit(item.value()), item.span())
-        } else {
+        } else if cfg!(feature = "exprs-as-keys") {
             let item = input.parse::<Expr>()?;
             (JsonKey::Expr(item.clone()), item.span())
+        } else {
+            let item = input.parse::<Ident>()?;
+            (JsonKey::Lit(item.to_string()), item.span())
         };
         input.parse::<Token![:]>()?;
 
