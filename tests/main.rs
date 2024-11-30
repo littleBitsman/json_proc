@@ -35,7 +35,8 @@ mod tests {
     }
 
     #[cfg(test)]
-    fn json_like_serde<S: ToString>(s: S) -> String {
+    fn json_like_serde<S: Clone + ToString>(s: S) -> String {
+        println!("{}", s.clone().to_string());
         serde_json::from_str::<serde_json::Value>(&s.to_string()).unwrap().to_string()
     }
 
@@ -87,7 +88,7 @@ mod tests {
             ]
             ,
             "e2": false,
-            "fake": format!("Can I see the syntax highlights pls {}", false),
+            "fake": format!("Can I see the syntax highlights pls {}", true),
             "es2": format!("hello: {} {hello}", "world!", hello = value),
             "test22": strc,
             "test2Enum": [
@@ -96,7 +97,8 @@ mod tests {
             ],
             "array": Tuple(Test2::Hello { hello: String::from("this is some nested stuff") }, 0, String::from("directly in tuple")),
             "a_null": null,
-            value: value
+            value: value,
+            "biggol Tuple": (1,2,3,4u128,5,-5208314976i64, 0usize, 184729163128763821312i128)
         });
         let dur = start.elapsed();
         println!("{finished}\nTook: {dur:?}");
@@ -158,7 +160,7 @@ mod tests {
         })
     }
 
-    #[allow(dead_code)]
+    #[test]
     fn test_json_with_escape_characters() {
         check_tt!({
             "message": "This is a \"quoted\" word.",

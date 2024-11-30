@@ -40,12 +40,12 @@ display_json_impl! {
     bool,
 }
 
-// FIXME: this doesn't correctly handle newlines
-// and other escaped characters
-// (AFAIK its only '\n')
+/// FIXME: this doesn't correctly handle newlines
+/// and other escaped characters like `"`
 impl ToJson for str {
     fn to_json_string(&self) -> String {
         let mut json = String::with_capacity(self.len() + 2);
+
         json.push('"');
         json.push_str(self);
         json.push('"');
@@ -195,3 +195,8 @@ impl<T: ToJson> ToJson for VecDeque<T> {
         )
     }
 }
+
+// Do some funny stuff with a proc-macro to
+// generate tuple impls.
+// This handles all tuples in (T1, T2, ..., T12)
+json_proc_macro::tuple_impl!();
