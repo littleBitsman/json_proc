@@ -221,7 +221,7 @@ impl ToTokens for JsonKey {
 impl ToTokens for JsonObject {
     fn to_tokens(&self, tokens: &mut TokenStream2) {
         if self.pairs.is_empty() {
-            return quote!("{}").to_tokens(tokens)
+            return quote!("{}".to_string()).to_tokens(tokens)
         }
         let pairs = &self.pairs;
         let mut pairs_tokens = Vec::new();
