@@ -1,11 +1,11 @@
-//! This module only provides the [`ToJson`] trait.
+//! This module only provides the [`ToJson`][ToJson] trait.
 //!
 //! See the documentation of [`json_proc`] for more info.
 //!
-//! [`ToJson`]: crate::ToJson
+//! [ToJson]: crate::ToJson
 //! [`json_proc`]: https://docs.rs/json_proc/latest/json_proc
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
+use std::{collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque}, hash::BuildHasher};
 
 /// Trait that converts a type to a JSON string.
 ///
@@ -40,12 +40,12 @@ display_json_impl! {
     bool,
 }
 
-// FIXME: this doesn't correctly handle newlines
-// and other escaped characters
-// (AFAIK its only '\n')
-impl ToJson for String {
+/// FIXME: this doesn't correctly handle newlines
+/// and other escaped characters like `"`
+impl ToJson for str {
     fn to_json_string(&self) -> String {
         let mut json = String::with_capacity(self.len() + 2);
+
         json.push('"');
         json.push_str(self);
         json.push('"');
@@ -54,14 +54,10 @@ impl ToJson for String {
     }
 }
 
-impl ToJson for str {
+impl ToJson for String {
+    #[inline]
     fn to_json_string(&self) -> String {
-        let mut json = String::with_capacity(self.len() + 2);
-        json.push('"');
-        json.push_str(self);
-        json.push('"');
-
-        json
+        self.as_str().to_json_string()
     }
 }
 
@@ -147,10 +143,11 @@ where
     }
 }
 
-impl<K, V> ToJson for HashMap<K, V>
+impl<K, V, S> ToJson for HashMap<K, V, S>
 where
     K: ToString,
     V: ToJson,
+    S: BuildHasher
 {
     fn to_json_string(&self) -> String {
         format!(
@@ -175,7 +172,7 @@ impl<T: ToJson> ToJson for BTreeSet<T> {
     }
 }
 
-impl<T: ToJson> ToJson for HashSet<T> {
+impl<T: ToJson, S: BuildHasher> ToJson for HashSet<T, S> {
     fn to_json_string(&self) -> String {
         format!(
             "[{}]",
@@ -198,3 +195,8 @@ impl<T: ToJson> ToJson for VecDeque<T> {
         )
     }
 }
+
+// Do some funny stuff with a proc-macro to
+// generate tuple impls.
+// This handles all tuples in (T1, T2, ..., T12)
+json_proc_macro::tuple_impl!();

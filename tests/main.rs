@@ -7,7 +7,7 @@ fn main() {
 }
 
 mod tests {
-    use std::time::Instant;
+    use std::{hint::black_box, time::Instant};
 
     use super::*;
     use json_proc::*;
@@ -35,7 +35,8 @@ mod tests {
     }
 
     #[cfg(test)]
-    fn json_like_serde<S: ToString>(s: S) -> String {
+    fn json_like_serde<S: Clone + ToString>(s: S) -> String {
+        println!("{}", s.clone().to_string());
         serde_json::from_str::<serde_json::Value>(&s.to_string()).unwrap().to_string()
     }
 
@@ -70,34 +71,37 @@ mod tests {
             test: u32::MAX,
         };
         
-        println!(
-            "{}",
-            json!({
-                "hello": (2 + 4) as f32 + other_value + (b'e' as f32) + ting(100.0),
-                "e": String::from("hello"),
-                "test": None::<()>,
-                "not": "trueStr",
-                "embedded_array": [
-                    1,2,
-                    5
-                    ,10,
-                    {
-                        "heck": true
-                    }
+        let start = Instant::now();
+        let finished = json!({
+            "hello": (2 + 4) as f32 + other_value + (b'e' as f32) + ting(100.0),
+            "e": String::from("hello"),
+            "test": None::<()>,
+            "not": "trueStr",
+            "embedded_array": [
+                1,2,
+                5
+                ,10,
+                {
+                    "heck": true
+                }
 
-                ]
-                ,
-                e2: false,
-                es2: format!("hello: {} {hello}", "world!", hello = value),
-                test22: strc,
-                test2Enum: [
-                    Test2::Hello { hello: String::from("this is Hello") },
-                    Test2::Two(String::from("this is 2"), 2),
-                ],
-                array: Tuple(Test2::Hello { hello: String::from("this is some nested stuff") }, 0, String::from("directly in tuple")),
-                "a_null": null
-            })
-        );
+            ]
+            ,
+            "e2": false,
+            "fake": format!("Can I see the syntax highlights pls {}", true),
+            "es2": format!("hello: {} {hello}", "world!", hello = value),
+            "test22": strc,
+            "test2Enum": [
+                Test2::Hello { hello: String::from("this is Hello") },
+                Test2::Two(String::from("this is 2"), 2),
+            ],
+            "array": Tuple(Test2::Hello { hello: String::from("this is some nested stuff") }, 0, String::from("directly in tuple")),
+            "a_null": null,
+            value: value,
+            "biggol Tuple": (1,2,3,4u128,5,-5208314976i64, 0usize, 184729163128763821312i128)
+        });
+        let dur = start.elapsed();
+        println!("{finished}\nTook: {dur:?}");
 
         // println!("{}", core::any::type_name_of_val(&None::<String>));
     }
@@ -106,25 +110,26 @@ mod tests {
     fn bench() {
         let hello = String::from("bad");
         let start = Instant::now();
-        serde_json_str!({
+        black_box(serde_json_str!({
             "hello": String::from("thisIsAString"),
             "struct": {
                 "yes": String::new()
             },
             hello.clone(): hello,
             "null": null
-        });
+        }));
         println!("{:?}", start.elapsed());
         let start = Instant::now();
-        let _ = json!({
+        black_box(json!({
             "hello": String::from("thisIsAString"),
             "struct": Test {
                 yes: String::new(),
                 test: usize::MAX
             },
-            bad: hello,
-            null: null
-        });
+            "bad": hello,
+            "null": null,
+            hello: "hi"
+        }));
         println!("{:?}", start.elapsed());
     }
 
@@ -155,7 +160,7 @@ mod tests {
         })
     }
 
-    #[allow(dead_code)]
+    #[test]
     fn test_json_with_escape_characters() {
         check_tt!({
             "message": "This is a \"quoted\" word.",

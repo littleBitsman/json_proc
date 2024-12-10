@@ -1,22 +1,26 @@
-#![feature(proc_macro_diagnostic)]
+#![cfg_attr(lints_enabled, feature(proc_macro_diagnostic))]
 
-use proc_macro::{Diagnostic, Level, TokenStream};
+use proc_macro::TokenStream;
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::{quote, ToTokens};
 use syn::{
     braced, bracketed, parse,
-    parse::{Parse, ParseStream, Result as SynResult},
+    parse::{Parse, ParseStream},
     parse_macro_input,
     spanned::Spanned,
-    token, Expr, Ident, ItemEnum, ItemStruct, LitBool, LitStr, Member, Token,
-    Error as SynError
+    token, Error as SynError, Expr, Index, Ident, ItemEnum, ItemStruct, LitBool, LitStr, Member,
+    Result as SynResult, Token,
 };
+
+#[cfg(lints_enabled)]
+// These only work on nightly because they are unstable
+use proc_macro::{Diagnostic, Level};
 
 mod util {
     use std::iter::Iterator;
 
     #[must_use]
-    #[inline]
+    #[inline(always)]
     // This exists the way it does for two reasons:
     // 1. utility
     // 2. proc macros are expanded during build
@@ -33,11 +37,27 @@ enum JsonValue {
     String(LitStr),
     Bool(bool),
     Expr(Expr),
-    Null
+    Null,
+}
+
+#[derive(Clone)]
+enum JsonKey {
+    Expr(Expr),
+    Lit(String),
+}
+
+impl PartialEq for JsonKey {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Lit(s1), Self::Lit(s2)) => *s1 == *s2,
+            (Self::Expr(e1), Self::Expr(e2)) => quote!(#e1).to_string() == quote!(#e2).to_string(),
+            _ => false,
+        }
+    }
 }
 
 struct JsonKeyValue {
-    key: String,
+    key: JsonKey,
     value: JsonValue,
     key_span: Span,
 }
@@ -52,21 +72,21 @@ struct JsonArray {
 
 impl Parse for JsonKeyValue {
     fn parse(input: ParseStream) -> SynResult<Self> {
-        // Parse the key as a string
-        let (key, span) = if input.peek(Ident) {
-            let ident = input.parse::<Ident>()?;
-            (ident.to_string(), ident.span())
+        let (key, span) = if input.peek(LitStr) {
+            let item = input.parse::<LitStr>()?;
+            (JsonKey::Lit(item.value()), item.span())
+        } else if cfg!(feature = "exprs-as-keys") {
+            let item = input.parse::<Expr>()?;
+            (JsonKey::Expr(item.clone()), item.span())
         } else {
-            let litstr = input.parse::<LitStr>()?;
-            (litstr.value(), litstr.span())
+            let item = input.parse::<Ident>()?;
+            (JsonKey::Lit(item.to_string()), item.span())
         };
         input.parse::<Token![:]>()?;
 
-        // Parse the value (could be any JsonValue)
-        let value: JsonValue = input.parse()?;
         Ok(JsonKeyValue {
             key,
-            value,
+            value: input.parse()?,
             key_span: span,
         })
     }
@@ -81,29 +101,35 @@ impl Parse for JsonObject {
         while !content.is_empty() {
             let pair = content.parse()?;
             pairs.push(pair);
-            if content.peek(Token![,]) {
-                content.parse::<Token![,]>()?;
-            }
+            let _ = content.parse::<Token![,]>();
         }
 
         {
-            let mut map: Vec<(String, Span)> = Vec::new();
-            for JsonKeyValue { key, key_span, .. } in pairs.iter() {
-                if let Some((_, span2)) = map.iter().find(|(key2, _)| *key2 == *key) {
-                    let mut d =
-                        Diagnostic::new(Level::Error, format!("duplicate key `{key}` in object"));
-                    d.set_spans(key_span.unwrap());
-                    d = d.span_note(span2.unwrap(), "key first defined here");
-                    d.emit();
-                } else {
-                    map.push((key.clone(), *key_span));
+            let mut map: Vec<(JsonKey, Span)> = Vec::new();
+            for JsonKeyValue { key, key_span, .. } in &pairs {
+                #[cfg(lints_enabled)]
+                if let Some((key, span2)) = map.iter().find(|(key2, _)| *key2 == *key) {
+                    Diagnostic::spanned(
+                        key_span.unwrap(),
+                        Level::Error,
+                        format!(
+                            "duplicate key {} in object",
+                            match key {
+                                JsonKey::Lit(str) => str.clone(),
+                                JsonKey::Expr(expr) => format!("expression `{}`", quote!(#expr)),
+                            }
+                        ),
+                    )
+                    .help("remove this repeated key")
+                    .span_note(span2.unwrap(), "key first defined here")
+                    .emit();
+                    continue;
                 }
+                map.push((key.clone(), *key_span));
             }
         }
 
-        Ok(JsonObject {
-            pairs
-        })
+        Ok(JsonObject { pairs })
     }
 }
 
@@ -152,9 +178,11 @@ impl Parse for JsonValue {
         } else if input.peek(token::Brace) {
             Ok(JsonValue::Object(input.parse()?))
         } else if input.peek(token::Bracket) {
-            Ok(JsonValue::Array(input.parse()?))            
-        } else if input.fork().parse::<Ident>()
-            .map(|v| v.to_string()) 
+            Ok(JsonValue::Array(input.parse()?))
+        } else if input
+            .fork()
+            .parse::<Ident>()
+            .map(|v| v.to_string())
             .is_ok_and(|v| v == "undefined" || v == "null")
         {
             input.parse::<Ident>()?;
@@ -180,9 +208,21 @@ impl ToTokens for JsonValue {
     }
 }
 
+impl ToTokens for JsonKey {
+    fn to_tokens(&self, tokens: &mut TokenStream2) {
+        match self {
+            Self::Lit(str) => quote!(#str).to_tokens(tokens),
+            Self::Expr(expr) => expr.to_tokens(tokens),
+        }
+    }
+}
+
 // Implementing quote for JsonObject to generate valid Rust code
 impl ToTokens for JsonObject {
     fn to_tokens(&self, tokens: &mut TokenStream2) {
+        if self.pairs.is_empty() {
+            return quote!("{}".to_string()).to_tokens(tokens)
+        }
         let pairs = &self.pairs;
         let mut pairs_tokens = Vec::new();
         for pair in pairs {
@@ -190,38 +230,62 @@ impl ToTokens for JsonObject {
             let value = &pair.value;
             pairs_tokens.push(quote!(format!("\"{}\":{}", #key, #value)));
         }
-        let output = quote! {
-            format!("{{{}}}", (vec![#(#pairs_tokens.to_string()),*] as Vec<String>).join(","))
-        };
+        let output = quote! {{
+            // format!("{{{}}}", (vec![#(#pairs_tokens),*] as Vec<String>).join(","))
+            let mut string = String::with_capacity(2);
+            string.push('{');
+            #(
+                string.push_str(&#pairs_tokens);
+                string.push(',');
+            )*
+            let _ = string.pop();
+            string.push('}');
+            string
+        }};
         output.to_tokens(tokens);
     }
 }
 
 impl ToTokens for JsonArray {
     fn to_tokens(&self, tokens: &mut TokenStream2) {
+        if self.elements.is_empty() {
+            return quote!("[]").to_tokens(tokens)
+        }
         let elements = &self.elements;
         let mut elements_tokens = Vec::new();
         for elem in elements {
             elements_tokens.push(quote!(#elem));
         }
-        let output = quote!(format!(
-            "[{}]",
-            (vec![#(#elements_tokens),*] as Vec<String>).join(",")
-        ));
+        let output = quote! {{
+            // format!("[{}]", (vec![#(#elements_tokens),*] as Vec<String>).join(","))
+            let mut string = String::with_capacity(2);
+            string.push('[');
+            #(
+                string.push_str(&#elements_tokens);
+                string.push(',');
+            )*
+            let _ = string.pop();
+            string.push(']');
+            string
+        }};
         output.to_tokens(tokens);
     }
 }
 
-/// Lints and properly formats a JSON object, array, or value.
+// Lints only happen on nightly since diagnostics are
+// unstable features, so change the docs to reflect that.
+#[cfg_attr(lints_enabled, doc = "Lints and properly ")]
+#[cfg_attr(not(lints_enabled), doc = "Properly ")]
+/// formats a JSON object, array, or value.
 ///
-/// This proc-macro supports:
-/// - all literals (integers, floats, [`&str`])
-/// - [`String`]
-/// - any expression that evaluates to a [`impl Display`]
+/// This macro supports:
+/// - all literals (integers, floats, [`&str`][strlit], [`char`])
+/// - any expression that evaluates to a [`impl ToJson`][ToJson]
 ///
 /// If you are looking for custom serialization traits, macros,
 /// and functions, use `serde_json` and `serde` instead.
-///
+/// 
+#[cfg_attr(not(lints_enabled), doc = "Keep in mind, lints are only enabled on the Nightly channel of Rust.")]
 /// ## Examples:
 ///
 /// Serializing an object:
@@ -250,9 +314,8 @@ impl ToTokens for JsonArray {
 /// }
 /// ```
 ///
-/// [`&str`]: str
-/// [`String`]: std::string::String
-/// [`impl Display`]: std::fmt::Display
+/// [strlit]: str
+/// [ToJson]: https://docs.rs/json_proc/latest/json_proc/trait.ToJson.html
 #[proc_macro]
 pub fn json(input: TokenStream) -> TokenStream {
     let json_value = parse_macro_input!(input as JsonValue);
@@ -265,12 +328,16 @@ pub fn json(input: TokenStream) -> TokenStream {
 /// ## Example:
 ///
 /// ```no_run
+/// # extern crate json_proc;
+/// use json_proc::{ToJson, json};
+/// 
 /// #[derive(ToJson)]
 /// struct Example1 {
 ///     field1: bool,
 ///     field2: i8
 /// }
 ///
+/// # #[test]
 /// fn print() {
 ///     println!("{}", json!(Example1 {
 ///         field1: true,
@@ -288,11 +355,13 @@ pub fn json_derive(item: TokenStream) -> TokenStream {
         let type_generics = input.generics.type_params().map(|v| v.ident.clone());
 
         let where_clause = where_clause.map_or_else(
-            || quote! {
-                where
-                    #(
-                        #type_generics: ::json_proc::ToJson
-                    ),*
+            || {
+                quote! {
+                    where
+                        #(
+                            #type_generics: ::json_proc::ToJson
+                        ),*
+                }
             },
             |v| quote!(#v),
         );
@@ -306,21 +375,37 @@ pub fn json_derive(item: TokenStream) -> TokenStream {
                 quote!(::json_proc::ToJson::to_json_string(&self.0))
             } else {
                 // Generate an array-like impl.
-                quote! {
-                    format!("[{}]", (vec![#(::json_proc::ToJson::to_json_string(&self.#members)),*] as Vec<String>).join(","))
-                }
+                quote! {{
+                    // format!("[{}]", (vec![#(#elements_tokens),*] as Vec<String>).join(","))
+                    let mut string = String::with_capacity(2);
+                    string.push('[');
+                    #(
+                        string.push_str(&(::json_proc::ToJson::to_json_string(&self.#members)));
+                        string.push(',');
+                    )*
+                    let _ = string.pop();
+                    string.push(']');
+                    string
+                }}
             }
         } else if members.peek().is_some() {
             // Generate an object-like impl.
-            quote! {
-                let mut pairs: Vec<String> = Vec::new();
-
+            quote! {{
+                // format!("{{{}}}", (vec![#(#pairs_tokens),*] as Vec<String>).join(","))
+                let mut string = String::with_capacity(2);
+                string.push('{');
                 #(
-                    pairs.push(format!("\"{key}\": {value}", key = stringify!(#members), value = ::json_proc::ToJson::to_json_string(&self.#members)));
+                    string.push('"');
+                    string.push_str(stringify!(#members));
+                    string.push('"');
+                    string.push(':');
+                    string.push_str(&(::json_proc::ToJson::to_json_string(&self.#members)));
+                    string.push(',');
                 )*
-
-                format!("{{{}}}", pairs.join(","))
-            }
+                let _ = string.pop();
+                string.push('}');
+                string
+            }}
         } else {
             quote!(stringify!(#ident).to_string())
         };
@@ -339,11 +424,13 @@ pub fn json_derive(item: TokenStream) -> TokenStream {
         let type_generics = input.generics.type_params().map(|v| v.ident.clone());
 
         let where_clause = where_clause.map_or_else(
-            || quote! {
-                where
-                    #(
-                        #type_generics: ::json_proc::ToJson
-                    ),*
+            || {
+                quote! {
+                    where
+                        #(
+                            #type_generics: ::json_proc::ToJson
+                        ),*
+                }
             },
             |v| quote!(#v),
         );
@@ -369,24 +456,40 @@ pub fn json_derive(item: TokenStream) -> TokenStream {
                         Member::Unnamed(i) => {
                             Ident::new(format!("arg{}", i.index).as_str(), i.span)
                         }
-                        _ => unreachable!(),
+                        Member::Named(_) => unreachable!(),
                     });
                     let members2 = members.clone();
                     quote!(Self::#varident( #(#members2),* ) => {
-                        format!("[{}]", (vec![#(::json_proc::ToJson::to_json_string(#members)),*] as Vec<String>).join(","))
+                        // format!("[{}]", (vec![#(#elements_tokens),*] as Vec<String>).join(","))
+                        let mut string = String::with_capacity(2);
+                        string.push('[');
+                        #(
+                            string.push_str(&(::json_proc::ToJson::to_json_string(#members)));
+                            string.push(',');
+                        )*
+                        let _ = string.pop();
+                        string.push(']');
+                        string
                     })
                 }
             } else {
                 // Generate an object-like impl.
                 let members2 = members.clone();
                 quote!(Self::#varident { #(#members2),* } => {
-                    let mut pairs: Vec<String> = Vec::new();
-
+                    // format!("{{{}}}", (vec![#(#pairs_tokens),*] as Vec<String>).join(","))
+                    let mut string = String::with_capacity(2);
+                    string.push('{');
                     #(
-                        pairs.push(format!("\"{key}\": {value}", key = stringify!(#members), value = ::json_proc::ToJson::to_json_string(#members)));
+                        string.push('"');
+                        string.push_str(stringify!(#members));
+                        string.push('"');
+                        string.push(':');
+                        string.push_str(&(::json_proc::ToJson::to_json_string(#members)));
+                        string.push(',');
                     )*
-
-                    format!("{{{}}}", pairs.join(","))
+                    let _ = string.pop();
+                    string.push('}');
+                    string
                 })
             };
 
@@ -411,4 +514,43 @@ pub fn json_derive(item: TokenStream) -> TokenStream {
         .into_compile_error()
         .into()
     }
+}
+
+#[doc(hidden)]
+#[proc_macro]
+/// Private macro for generating impls of ToJson for tuples.
+pub fn tuple_impl(_: TokenStream) -> TokenStream {
+    const LETTERS: [char; 12] = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'];
+    let mut streams = Vec::with_capacity(12);
+    for i in 0..12 {
+        let letters = &LETTERS[..(i + 1)].iter().map(|ch| Ident::new(&ch.to_string(), Span::call_site())).collect::<Vec<Ident>>();
+        let nums = (0..(i + 1)).map(Index::from).collect::<Vec<Index>>();
+        let doc_attr = if i == 0 {
+            quote!(#[doc = "`ToJson` is implemented for tuples up to size 12."])
+        } else {
+            quote!(#[doc(hidden)])
+        };
+        streams.push(quote! {
+            #doc_attr
+            impl<#(#letters),*> crate::ToJson for (#(#letters,)*) 
+            where
+                #(
+                    #letters: crate::ToJson
+                ),*
+            {
+                fn to_json_string(&self) -> String {
+                    let mut string = String::with_capacity(3);
+                    string.push('[');
+                    #(
+                        string.push_str(&(crate::ToJson::to_json_string(&self.#nums)));
+                        string.push(',');
+                    )*
+                    let _ = string.pop();
+                    string.push(']');
+                    string
+                } 
+            }
+        });
+    }
+    quote!(#(#streams)*).into()
 }
