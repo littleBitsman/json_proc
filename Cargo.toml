@@ -28,3 +28,6 @@ json_proc_macro = { path = "./json_proc_macro", version = "0.5.1" }
 [dev-dependencies]
 json_proc_macro = { path = "./json_proc_macro", version = "0.5.1", features = ["exprs-as-keys"] }
 serde_json = "1.0.128"
+
+[build-dependencies]
+rustc_version = "0.4.1"

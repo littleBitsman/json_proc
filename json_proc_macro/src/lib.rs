@@ -1,4 +1,4 @@
-#![cfg_attr(lints_enabled, feature(proc_macro_diagnostic))]
+#![cfg_attr(lints_enabled, feature(proc_macro_diagnostic), feature(negative_impls))]
 
 use proc_macro::TokenStream;
 use proc_macro2::{Span, TokenStream as TokenStream2};
@@ -8,8 +8,8 @@ use syn::{
     parse::{Parse, ParseStream},
     parse_macro_input,
     spanned::Spanned,
-    token, Error as SynError, Expr, Index, Ident, ItemEnum, ItemStruct, LitBool, LitStr, Member,
-    Result as SynResult, Token,
+    token, Error as SynError, Expr, Ident, Index, ItemEnum, ItemStruct, LitBool, LitInt, LitStr,
+    Member, Result as SynResult, Token,
 };
 
 #[cfg(lints_enabled)]
@@ -169,6 +169,27 @@ impl JsonValue {
 }
 */
 
+fn check_int_overflow(int: LitInt) {
+    let upper = const { 2i64.pow(53) };
+    let lower = -upper;
+    let (clamped, fits) = int.base10_parse::<i64>().map_or((0, false), |v| {
+        (v.clamp(lower, upper), (lower..upper).contains(&v))
+    });
+    if !fits {
+        let mut d = Diagnostic::spanned(
+            int.span().unwrap(),
+            Level::Note,
+            "value may be outside safe integer range of most programming languages",
+        )
+        .note("keeping this value may result in a loss of precision in other languages")
+        .note("-2^53 to 2^53 is the JavaScript safe integer range");
+        if clamped != 0 {
+            d = d.help(format!("change this value or show it clamped: {clamped}"))
+        }
+        d.emit();
+    }
+}
+
 impl Parse for JsonValue {
     fn parse(input: ParseStream) -> SynResult<Self> {
         if input.peek(LitStr) {
@@ -188,6 +209,10 @@ impl Parse for JsonValue {
             input.parse::<Ident>()?;
             Ok(JsonValue::Null)
         } else {
+            #[cfg(lints_enabled)]
+            if let Ok(int) = input.fork().parse::<LitInt>() {
+                check_int_overflow(int)
+            }
             Ok(JsonValue::Expr(input.parse()?))
         }
     }
@@ -201,7 +226,7 @@ impl ToTokens for JsonValue {
             JsonValue::String(litstr) => quote!(format!("\"{}\"", #litstr)).to_tokens(tokens),
             JsonValue::Bool(b) => (*b).to_tokens(tokens),
             JsonValue::Expr(expr) => {
-                quote!(::json_proc::ToJson::to_json_string(&(#expr))).to_tokens(tokens);
+                quote!((::json_proc::ToJson::to_json_string(&(#expr)))).to_tokens(tokens);
             }
             JsonValue::Null => quote!("null").to_tokens(tokens),
         }
@@ -221,7 +246,7 @@ impl ToTokens for JsonKey {
 impl ToTokens for JsonObject {
     fn to_tokens(&self, tokens: &mut TokenStream2) {
         if self.pairs.is_empty() {
-            return quote!("{}".to_string()).to_tokens(tokens)
+            return quote!("{}".to_string()).to_tokens(tokens);
         }
         let pairs = &self.pairs;
         let mut pairs_tokens = Vec::new();
@@ -249,7 +274,7 @@ impl ToTokens for JsonObject {
 impl ToTokens for JsonArray {
     fn to_tokens(&self, tokens: &mut TokenStream2) {
         if self.elements.is_empty() {
-            return quote!("[]").to_tokens(tokens)
+            return quote!("[]").to_tokens(tokens);
         }
         let elements = &self.elements;
         let mut elements_tokens = Vec::new();
@@ -284,8 +309,15 @@ impl ToTokens for JsonArray {
 ///
 /// If you are looking for custom serialization traits, macros,
 /// and functions, use `serde_json` and `serde` instead.
-/// 
-#[cfg_attr(not(lints_enabled), doc = "Keep in mind, lints are only enabled on the Nightly channel of Rust.")]
+///
+#[cfg_attr(
+    not(lints_enabled),
+    doc = "Keep in mind, lints are only enabled on the Nightly channel of Rust."
+)]
+#[cfg_attr(
+    lints_enabled,
+    doc = "Lints are currently enabled because you are using the Nightly channel of Rust."
+)]
 /// ## Examples:
 ///
 /// Serializing an object:
@@ -330,7 +362,7 @@ pub fn json(input: TokenStream) -> TokenStream {
 /// ```no_run
 /// # extern crate json_proc;
 /// use json_proc::{ToJson, json};
-/// 
+///
 /// #[derive(ToJson)]
 /// struct Example1 {
 ///     field1: bool,
@@ -348,23 +380,20 @@ pub fn json(input: TokenStream) -> TokenStream {
 #[proc_macro_derive(ToJson)]
 // TODO: add enum support
 pub fn json_derive(item: TokenStream) -> TokenStream {
-    if let Ok(input) = parse::<ItemStruct>(item.clone()) {
+    if let Ok(mut input) = parse::<ItemStruct>(item.clone()) {
         let ident = &input.ident;
         let mut members = input.fields.members().peekable();
-        let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+        input.generics.make_where_clause();
+        let (impl_generics, ty_generics, _) = input.generics.split_for_impl();
+        let mut where_clause = input.generics.where_clause.clone().unwrap();
         let type_generics = input.generics.type_params().map(|v| v.ident.clone());
-
-        let where_clause = where_clause.map_or_else(
-            || {
-                quote! {
-                    where
-                        #(
-                            #type_generics: ::json_proc::ToJson
-                        ),*
-                }
-            },
-            |v| quote!(#v),
-        );
+        let path = quote!(::json_proc::ToJson).into();
+        let path = parse_macro_input!(path as syn::Path);
+        for ty in type_generics {
+            let mut bounds = syn::punctuated::Punctuated::new();
+            bounds.push(syn::TypeParamBound::Trait(syn::TraitBound { paren_token: None, modifier: syn::TraitBoundModifier::None, lifetimes: None, path: path.clone() }));
+            where_clause.predicates.push(syn::WherePredicate::Type(syn::PredicateType { lifetimes: None, bounded_ty: syn::Type::Verbatim(quote!(#ty)), colon_token: Token![:](Span::call_site()), bounds }))
+        }
 
         let fn_impl = if members
             .peek()
@@ -417,23 +446,20 @@ pub fn json_derive(item: TokenStream) -> TokenStream {
             }
         }
         .into()
-    } else if let Ok(input) = parse::<ItemEnum>(item.clone()) {
+    } else if let Ok(mut input) = parse::<ItemEnum>(item.clone()) {
         let ident = input.ident;
         let variants = input.variants.iter().peekable();
-        let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+        input.generics.make_where_clause();
+        let (impl_generics, ty_generics, _) = input.generics.split_for_impl();
+        let mut where_clause = input.generics.where_clause.clone().unwrap();
         let type_generics = input.generics.type_params().map(|v| v.ident.clone());
-
-        let where_clause = where_clause.map_or_else(
-            || {
-                quote! {
-                    where
-                        #(
-                            #type_generics: ::json_proc::ToJson
-                        ),*
-                }
-            },
-            |v| quote!(#v),
-        );
+        let path = quote!(::json_proc::ToJson).into();
+        let path = parse_macro_input!(path as syn::Path);
+        for ty in type_generics {
+            let mut bounds = syn::punctuated::Punctuated::new();
+            bounds.push(syn::TypeParamBound::Trait(syn::TraitBound { paren_token: None, modifier: syn::TraitBoundModifier::None, lifetimes: None, path: path.clone() }));
+            where_clause.predicates.push(syn::WherePredicate::Type(syn::PredicateType { lifetimes: None, bounded_ty: syn::Type::Verbatim(quote!(#ty)), colon_token: Token![:](Span::call_site()), bounds }))
+        }
 
         let mut streams: Vec<TokenStream2> = Vec::new();
         for var in variants {
@@ -523,7 +549,10 @@ pub fn tuple_impl(_: TokenStream) -> TokenStream {
     const LETTERS: [char; 12] = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'];
     let mut streams = Vec::with_capacity(12);
     for i in 0..12 {
-        let letters = &LETTERS[..(i + 1)].iter().map(|ch| Ident::new(&ch.to_string(), Span::call_site())).collect::<Vec<Ident>>();
+        let letters = &LETTERS[..(i + 1)]
+            .iter()
+            .map(|ch| Ident::new(&ch.to_string(), Span::call_site()))
+            .collect::<Vec<Ident>>();
         let nums = (0..(i + 1)).map(Index::from).collect::<Vec<Index>>();
         let doc_attr = if i == 0 {
             quote!(#[doc = "`ToJson` is implemented for tuples up to size 12."])
@@ -532,7 +561,7 @@ pub fn tuple_impl(_: TokenStream) -> TokenStream {
         };
         streams.push(quote! {
             #doc_attr
-            impl<#(#letters),*> crate::ToJson for (#(#letters,)*) 
+            impl<#(#letters),*> crate::ToJson for (#(#letters,)*)
             where
                 #(
                     #letters: crate::ToJson
@@ -548,7 +577,7 @@ pub fn tuple_impl(_: TokenStream) -> TokenStream {
                     let _ = string.pop();
                     string.push(']');
                     string
-                } 
+                }
             }
         });
     }

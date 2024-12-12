@@ -13,7 +13,10 @@ mod tests {
     use json_proc::*;
 
     #[derive(ToJson)]
-    struct Test<T: json_proc::ToJson> {
+    struct Test<T>
+    where
+        T: Default,
+    {
         yes: String,
         test: T,
     }
@@ -37,7 +40,9 @@ mod tests {
     #[cfg(test)]
     fn json_like_serde<S: Clone + ToString>(s: S) -> String {
         println!("{}", s.clone().to_string());
-        serde_json::from_str::<serde_json::Value>(&s.to_string()).unwrap().to_string()
+        serde_json::from_str::<serde_json::Value>(&s.to_string())
+            .unwrap()
+            .to_string()
     }
 
     #[cfg(test)]
@@ -70,7 +75,7 @@ mod tests {
             yes: String::from("hello"),
             test: u32::MAX,
         };
-        
+
         let start = Instant::now();
         let finished = json!({
             "hello": (2 + 4) as f32 + other_value + (b'e' as f32) + ting(100.0),
@@ -98,7 +103,8 @@ mod tests {
             "array": Tuple(Test2::Hello { hello: String::from("this is some nested stuff") }, 0, String::from("directly in tuple")),
             "a_null": null,
             value: value,
-            "biggol Tuple": (1,2,3,4u128,5,-5208314976i64, 0usize, 184729163128763821312i128)
+            "biggol Tuple": (1,2,3,4u128,5,-5208314976i64, 0usize, 184729163128763821312i128),
+            "tooBig": 98237912693271637
         });
         let dur = start.elapsed();
         println!("{finished}\nTook: {dur:?}");

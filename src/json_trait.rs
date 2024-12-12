@@ -5,7 +5,7 @@
 //! [ToJson]: crate::ToJson
 //! [`json_proc`]: https://docs.rs/json_proc/latest/json_proc
 
-use std::{collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque}, hash::BuildHasher};
+use std::{collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque}, ffi::{CStr, CString, OsStr, OsString}, hash::BuildHasher};
 
 /// Trait that converts a type to a JSON string.
 ///
@@ -72,26 +72,33 @@ impl ToJson for char {
     }
 }
 
+impl ToJson for CStr {
+    fn to_json_string(&self) -> String {
+        self.to_string_lossy().to_json_string()
+    }
+}
+impl ToJson for CString {
+    fn to_json_string(&self) -> String {
+        self.as_c_str().to_json_string()
+    }
+}
+impl ToJson for OsStr {
+    fn to_json_string(&self) -> String {
+        self.to_string_lossy().to_json_string()
+    }
+}
+impl ToJson for OsString {
+    fn to_json_string(&self) -> String {
+        self.as_os_str().to_json_string()
+    }
+}
+
 impl<T: ToJson> ToJson for Option<T> {
     #[inline]
     fn to_json_string(&self) -> String {
         match self {
             Some(t) => t.to_json_string(),
             None => String::from("null"),
-        }
-    }
-}
-
-impl<T, E> ToJson for Result<T, E>
-where
-    T: ToJson,
-    E: ToJson,
-{
-    #[inline]
-    fn to_json_string(&self) -> String {
-        match self {
-            Ok(t) => t.to_json_string(),
-            Err(e) => e.to_json_string(),
         }
     }
 }
@@ -193,6 +200,24 @@ impl<T: ToJson> ToJson for VecDeque<T> {
                 .collect::<Vec<String>>()
                 .join(",")
         )
+    }
+}
+
+#[cfg(compiler = "nightly")]
+mod nightly_impls {
+    use crate::ToJson;
+    use std::ascii::Char;
+
+    impl ToJson for Char {
+        fn to_json_string(&self) -> String {
+            self.to_char().to_json_string()
+        }
+    }
+
+    impl ToJson for ! {
+        fn to_json_string(&self) -> String {
+            "null".to_json_string()
+        }
     }
 }
 
